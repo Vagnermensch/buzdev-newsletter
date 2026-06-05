@@ -825,12 +825,6 @@ $("#btnSendNow").addEventListener("click", async () => {
   btnSendNow.textContent = "Sending…";
   try {
     const headers = { "Content-Type": "application/json" };
-    // Attach the OIDC access token so the API can authorize the request.
-    // Gizmos/OIDC integration provides the token via window.getAccessToken().
-    try {
-      const token = typeof window.getAccessToken === "function" ? await window.getAccessToken() : null;
-      if (token) headers.Authorization = `Bearer ${token}`;
-    } catch { /* fall through — server will 401 if required */ }
 
     const res = await fetch(SEND_ENDPOINT, {
       method: "POST",
@@ -838,7 +832,7 @@ $("#btnSendNow").addEventListener("click", async () => {
       credentials: "same-origin",
       body: JSON.stringify(payload),
     });
-    if (res.status === 401 || res.status === 403) { toast("Not authorized — sign in with your TELUS account"); return; }
+    if (res.status === 503) { toast("Email service isn’t configured yet"); return; }
     if (res.status === 429) { toast("Too many sends — wait a minute and try again"); return; }
     if (!res.ok) { let m = "Send failed, please try again"; try { m = (await res.json()).error || m; } catch {} toast(m); return; }
     const data = await res.json().catch(() => ({}));

@@ -1,0 +1,25 @@
+# Render.com blueprint. In Render: New + → Blueprint → point at this repo.
+# It reads this file, creates the web service, and prompts for the two secrets.
+services:
+  - type: web
+    name: buzdev-newsletter
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      # Secrets — left blank here on purpose; enter them in the Render dashboard.
+      - key: GMAIL_USER
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      # Non-secret tunables (override in the dashboard if you like).
+      - key: MAIL_FROM_NAME
+        value: Newsletter
+      - key: RATE_MAX
+        value: "5"
+      - key: RATE_WINDOW_SEC
+        value: "60"
+      - key: MAX_RECIPIENTS
+        value: "50"
