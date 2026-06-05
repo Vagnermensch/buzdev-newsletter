@@ -1,0 +1,18 @@
+# Gizmos deploy config. The loader auto-provisions these bindings and wires
+# them into the worker's `env`. The worker entry is worker.ts at the zip root.
+
+# Per-user rate-limit counters for /api/send
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+
+# Non-secret config. Fill in your tenant + app ids before deploying.
+[vars]
+OIDC_ISSUER = "https://login.microsoftonline.com/<TENANT_ID>/v2.0"
+OIDC_AUDIENCE = "<API_APP_ID>"          # the app id tokens are issued for (the SPA's API)
+ALLOWED_EMAIL_DOMAIN = "telusdigital.com"
+GRAPH_TENANT_ID = "<TENANT_ID>"
+GRAPH_CLIENT_ID = "<SEND_APP_ID>"       # app registration granted Mail.Send (application)
+
+# GRAPH_CLIENT_SECRET is a SECRET — do NOT put it in [vars] (vars ship in the zip).
+# Provide it through Gizmos' secret / API-key binding mechanism so it lands in
+# env.GRAPH_CLIENT_SECRET at runtime.

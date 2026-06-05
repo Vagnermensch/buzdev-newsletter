@@ -1,0 +1,19 @@
+{
+  "name": "newsletter-builder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Business Acumen newsletter builder + send endpoint",
+  "scripts": {
+    "start": "node server/send-server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "jose": "^5.9.6",
+    "nodemailer": "^6.9.14"
+  }
+}

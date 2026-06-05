@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Newsletter Builder · Business Acumen</title>
+
+  <!-- Clarity type system: Inter (sans) + DM Sans (display) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark">N</span>
+        Newsletter Builder
+        <small>Business Acumen · CCC theme</small>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn btn-outline btn-sm" id="btnReset">Reset</button>
+      <select class="select select-sm" id="templatePicker" title="Load a template"></select>
+      <button class="btn btn-primary" id="btnSend">Send newsletter</button>
+    </header>
+
+    <div class="workspace">
+      <!-- Editor -->
+      <aside class="editor">
+        <div>
+          <p class="section-label">Newsletter settings</p>
+          <div class="field">
+            <label class="lbl" for="setSubject">Subject line</label>
+            <input class="input" id="setSubject" data-setting="subject" placeholder="The business of design — Vol. 04" />
+          </div>
+          <div class="field" style="margin-top:12px">
+            <label class="lbl" for="setPreheader">Preheader (inbox preview)</label>
+            <input class="input" id="setPreheader" data-setting="preheader" placeholder="A practice tool for designers…" />
+          </div>
+        </div>
+
+        <div>
+          <p class="section-label">Add block</p>
+          <div class="palette" id="palette"><!-- buttons injected by JS --></div>
+        </div>
+
+        <div>
+          <p class="section-label">Content blocks</p>
+          <div class="blocks" id="blocks"><!-- block cards injected by JS --></div>
+        </div>
+
+        <div>
+          <p class="section-label">Design system palette</p>
+          <div class="palette-ref" id="paletteRef"><!-- swatches injected by JS --></div>
+        </div>
+      </aside>
+
+      <!-- Preview -->
+      <section class="preview-pane">
+        <div class="preview-toolbar">
+          <span class="section-label" style="margin:0">Live preview</span>
+          <div class="seg" id="viewport">
+            <button data-w="desktop" class="active">Desktop</button>
+            <button data-w="mobile">Mobile</button>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-ghost btn-sm" id="btnCopyQuick">Copy HTML</button>
+        </div>
+        <div class="preview-scroll" id="previewScroll" data-w="desktop">
+          <iframe id="previewFrame" title="Newsletter preview"></iframe>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Send dialog -->
+  <div class="dialog-backdrop" id="exportDialog">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+      <header>
+        <h2 id="exportTitle">Send newsletter</h2>
+        <div class="spacer"></div>
+        <button class="btn btn-ghost btn-sm" id="btnCloseDialog">Close</button>
+      </header>
+      <div class="content">
+        <div class="field">
+          <label class="lbl">From</label>
+          <input class="input" id="sendFrom" readonly />
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label class="lbl" for="sendTo">To <span style="color:var(--muted-foreground);font-weight:400">(comma-separated)</span></label>
+          <input class="input" id="sendTo" type="text" placeholder="cohort@telusdigital.com, …" />
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label class="lbl" for="sendSubject">Subject</label>
+          <input class="input" id="sendSubject" type="text" />
+        </div>
+
+        <details style="margin-top:16px">
+          <summary style="cursor:pointer;font-size:13px;color:var(--muted-foreground)">Preview / copy the email HTML</summary>
+          <p style="color:var(--muted-foreground);font-size:13px;margin:10px 0">
+            Email-safe HTML (table layout, inline styles) themed with the Business Acumen / CCC design system.
+          </p>
+          <textarea class="code" id="exportCode" readonly spellcheck="false"></textarea>
+        </details>
+      </div>
+      <footer>
+        <button class="btn btn-ghost" id="btnCopyDialog">Copy HTML</button>
+        <button class="btn btn-outline" id="btnDownload">Download .html</button>
+        <button class="btn btn-primary" id="btnSendNow">Send</button>
+      </footer>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

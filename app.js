@@ -1,0 +1,888 @@
+/* =====================================================================
+   Newsletter Builder — logic + renderer
+   App UI = Clarity.  Output newsletters = Business Acumen / CCC theme.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   CCC / Business Acumen theme tokens (extracted from the .fig design file)
+   --------------------------------------------------------------------- */
+const THEME = {
+  /* --- Base colors (exact, from the design system) --- */
+  bg:         "#1A1A1A",  // Black — page background
+  darkGray:   "#4E4E4E",  // Dark Gray
+  mediumGray: "#9D9D9D",  // Medium Gray
+  lightGray:  "#EFEFEF",  // Light Gray
+  white:      "#FFFFFF",  // White
+  /* --- Semantic neutrals (mapped to base colors) --- */
+  border:    "#4E4E4E",   // Dark Gray — hairline dividers
+  secondary: "#EFEFEF",   // Light Gray — body text
+  muted:     "#9D9D9D",   // Medium Gray — labels / captions
+  surface:   "#262626",   // raised surface (image placeholder)
+  /* --- Accent colors (exact) --- */
+  teal:   "#0F868E",
+  blue:   "#18A9DA",
+  purple: "#9747FF",
+  pink:   "#E53293",
+  orange: "#FF8539",
+  yellow: "#CFEE69",
+  // email-safe font stacks (web fonts load via <link>, with classic fallbacks)
+  serif: "'Fraunces', Georgia, 'Times New Roman', serif",
+  sans:  "'Inter', Helvetica, Arial, sans-serif",
+};
+// every accent the design system exposes, in palette order
+const ACCENTS = {
+  teal:   THEME.teal,
+  blue:   THEME.blue,
+  purple: THEME.purple,
+  pink:   THEME.pink,
+  orange: THEME.orange,
+  yellow: THEME.yellow,
+};
+// readable text color when an accent is used as a *fill*
+const ON_ACCENT = { teal: "#FFFFFF", blue: "#1A1A1A", purple: "#FFFFFF", pink: "#FFFFFF", orange: "#1A1A1A", yellow: "#1A1A1A" };
+
+// Status taxonomy for Chip/Tag and Callout components (design file:
+// Type = Urgent | Warning | Success | Info | Tip | Resource).
+// Mapped onto the exact accent palette.
+const STATUS = {
+  urgent:   { color: THEME.pink,   glyph: "●", label: "Urgent" },
+  warning:  { color: THEME.orange, glyph: "▲", label: "Warning" },
+  success:  { color: THEME.teal,   glyph: "✓", label: "Success" },
+  info:     { color: THEME.purple, glyph: "ⓘ", label: "Info" },
+  tip:      { color: THEME.yellow, glyph: "✦", label: "Tip" },     // confirmed: TIP = yellow
+  resource: { color: THEME.blue,   glyph: "◆", label: "Resource" },// confirmed: RESOURCE = blue
+};
+const STATUS_OPTIONS = Object.entries(STATUS).map(([value, s]) => ({ value, label: s.label }));
+
+// Shared status chip (outlined rectangle) used by Tags and inside Callouts.
+function chipMarkup(label, s, t, margin = "", padding = "9px 16px") {
+  return `<span style="display:inline-block;font-family:${t.sans};font-size:12px;font-weight:600;line-height:1.5;letter-spacing:0.06em;text-transform:uppercase;border-radius:2px;padding:${padding};${margin}color:${s.color};background:${tint(s.color)};border:2px solid ${s.color};">${esc(label)}</span>`;
+}
+
+// 10% tint of an accent over the Black base — the design system's "X Tint 10%" token.
+// Returns an email-safe solid hex.
+function tint(hex, alpha = 0.10, base = THEME.bg) {
+  const a = parseInt(hex.slice(1), 16), b = parseInt(base.slice(1), 16);
+  const ch = i => {
+    const sc = (a >> (i * 8)) & 255, dc = (b >> (i * 8)) & 255;
+    return Math.round(sc * alpha + dc * (1 - alpha));
+  };
+  return "#" + [ch(2), ch(1), ch(0)].map(x => x.toString(16).padStart(2, "0")).join("");
+}
+
+/* ---------------------------------------------------------------------
+   Helpers
+   --------------------------------------------------------------------- */
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const uid = () => "b" + Math.random().toString(36).slice(2, 9);
+
+function esc(str = "") {
+  return String(str)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+// paragraph + line-break aware text for email bodies
+function richText(str, style) {
+  const safe = esc(str).trim();
+  if (!safe) return "";
+  return safe.split(/\n{2,}/).map(p =>
+    `<p style="${style}">${p.replace(/\n/g, "<br>")}</p>`
+  ).join("");
+}
+// wrap an accent phrase (italic + colored) inside an already-escaped headline
+function emphasize(escapedText, phrase, color) {
+  const p = esc((phrase || "").trim());
+  if (!p) return escapedText;
+  const i = escapedText.toLowerCase().indexOf(p.toLowerCase());
+  if (i < 0) return escapedText;
+  const before = escapedText.slice(0, i);
+  const hit = escapedText.slice(i, i + p.length);
+  const after = escapedText.slice(i + p.length);
+  return `${before}<em style="font-style:italic;color:${color};">${hit}</em>${after}`;
+}
+// standard block row: vertical padding inline, horizontal padding via .px (responsive)
+function row(content, vTop, vBot, extra = "") {
+  return `<tr><td class="px" style="padding:${vTop}px 48px ${vBot}px 48px;${extra}">${content}</td></tr>`;
+}
+
+/* ---------------------------------------------------------------------
+   Block definitions: editor schema + email renderer
+   --------------------------------------------------------------------- */
+const DEFS = {
+  masthead: {
+    name: "Masthead", icon: "▤",
+    defaults: { issue: "VOL. 04 · SPRING 2026", section: "BUSINESS ACUMEN" },
+    fields: [
+      { key: "issue",   label: "Issue label (yellow dot)", type: "text" },
+      { key: "section", label: "Section label (orange dot)", type: "text" },
+    ],
+    render: (d, t) => {
+      const dot = c => `<span style="display:inline-block;width:8px;height:8px;border-radius:99px;background:${c};vertical-align:middle;margin-right:8px;"></span>`;
+      const lbl = "font-family:" + t.sans + ";font-size:11px;font-weight:600;letter-spacing:0.10em;color:" + t.white + ";text-transform:uppercase;vertical-align:middle;";
+      const cell = (c, txt) => txt ? `<span style="${lbl}">${dot(c)}${esc(txt)}</span>` : "";
+      const right = d.section ? `<span style="margin-left:28px;">${cell(t.orange, d.section)}</span>` : "";
+      return row(
+        `${cell(t.yellow, d.issue)}${right}`,
+        40, 22,
+        `border-bottom:1px solid ${t.border};`
+      );
+    },
+  },
+
+  hero: {
+    name: "Hero headline", icon: "❡",
+    defaults: { text: "The business of design.", emphasis: "design.", accent: "yellow" },
+    fields: [
+      { key: "text",     label: "Headline", type: "textarea" },
+      { key: "emphasis", label: "Italic accent phrase (must appear in headline)", type: "text" },
+      { key: "accent",   label: "Accent color", type: "swatch" },
+    ],
+    render: (d, t) => {
+      const color = ACCENTS[d.accent] || t.yellow;
+      const html = emphasize(esc(d.text), d.emphasis, color);
+      return row(
+        `<div class="hero" style="font-family:${t.serif};font-weight:400;font-size:66px;line-height:0.98;letter-spacing:-0.02em;color:${t.white};">${html}</div>`,
+        30, 8
+      );
+    },
+  },
+
+  lead: {
+    name: "Lead / intro", icon: "“",
+    defaults: { text: "A practice tool for designers learning to speak the language of business." },
+    fields: [{ key: "text", label: "Intro text", type: "textarea" }],
+    render: (d, t) => row(
+      richText(d.text, `margin:0 0 12px;font-family:${t.serif};font-style:italic;font-weight:400;font-size:23px;line-height:1.45;color:${t.secondary};`),
+      8, 18
+    ),
+  },
+
+  heading: {
+    name: "Section heading", icon: "H",
+    defaults: { eyebrow: "FEATURE", text: "Welcome back." },
+    fields: [
+      { key: "eyebrow", label: "Eyebrow (optional, uppercase)", type: "text" },
+      { key: "text",    label: "Heading", type: "text" },
+    ],
+    render: (d, t) => {
+      const eb = d.eyebrow ? `<div style="font-family:${t.sans};font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:${t.muted};margin-bottom:10px;">${esc(d.eyebrow)}</div>` : "";
+      return row(
+        `${eb}<div style="font-family:${t.serif};font-weight:400;font-size:38px;line-height:1.05;letter-spacing:-0.01em;color:${t.white};">${esc(d.text)}</div>`,
+        26, 8
+      );
+    },
+  },
+
+  paragraph: {
+    name: "Paragraph", icon: "¶",
+    defaults: { text: "Type your body copy here. Leave a blank line to start a new paragraph." },
+    fields: [{ key: "text", label: "Body text", type: "textarea" }],
+    render: (d, t) => row(
+      richText(d.text, `margin:0 0 16px;font-family:${t.sans};font-size:16px;line-height:1.65;color:${t.secondary};`),
+      8, 8
+    ),
+  },
+
+  stat: {
+    name: "Stat", icon: "#",
+    defaults: { value: "73%", label: "of designers can’t read a P&L", accent: "yellow" },
+    fields: [
+      { key: "value", label: "Big number / value", type: "text" },
+      { key: "label", label: "Caption", type: "text" },
+      { key: "accent", label: "Accent color", type: "swatch" },
+    ],
+    render: (d, t) => {
+      const color = ACCENTS[d.accent] || t.yellow;
+      return row(
+        `<div style="font-family:${t.serif};font-weight:400;font-size:72px;line-height:0.9;letter-spacing:-0.02em;color:${color};">${esc(d.value)}</div>
+         <div style="font-family:${t.sans};font-size:13px;font-weight:500;letter-spacing:0.04em;text-transform:uppercase;color:${t.muted};margin-top:10px;">${esc(d.label)}</div>`,
+        22, 22
+      );
+    },
+  },
+
+  quote: {
+    name: "Pull quote", icon: "❝",
+    defaults: { text: "Design is the silent ambassador of your brand.", cite: "Paul Rand" },
+    fields: [
+      { key: "text", label: "Quote", type: "textarea" },
+      { key: "cite", label: "Attribution", type: "text" },
+    ],
+    render: (d, t) => {
+      const cite = d.cite ? `<div style="font-family:${t.sans};font-size:12px;font-weight:600;letter-spacing:0.10em;text-transform:uppercase;color:${t.yellow};margin-top:16px;">— ${esc(d.cite)}</div>` : "";
+      return row(
+        `<div style="border-left:3px solid ${t.yellow};padding-left:24px;">
+           <div style="font-family:${t.serif};font-style:italic;font-weight:400;font-size:28px;line-height:1.3;color:${t.white};">${esc(d.text)}</div>
+           ${cite}
+         </div>`,
+        20, 20
+      );
+    },
+  },
+
+  tags: {
+    name: "Tags / Chips", icon: "⌗",
+    defaults: { items: "Strategy, Pricing, Retention", type: "info", icon: "off" },
+    fields: [
+      { key: "items", label: "Tags (comma-separated)", type: "text" },
+      { key: "type",  label: "Status type", type: "select", options: STATUS_OPTIONS },
+      { key: "icon",  label: "Status icon", type: "select", options: [
+        { value: "off", label: "Hide" },
+        { value: "on",  label: "Show" },
+      ] },
+    ],
+    render: (d, t) => {
+      const s = STATUS[d.type] || STATUS.info;
+      const items = (d.items || "").split(",").map(x => x.trim()).filter(Boolean);
+      if (!items.length) return "";
+      // Chip: outlined rectangle — 2px status border, 10% tint fill, semibold uppercase status text.
+      const ico = d.icon === "on" ? `${s.glyph}  ` : "";
+      const chip = (label) => chipMarkup(ico + label, s, t, "margin:0 8px 8px 0;");
+      return row(items.map(chip).join(""), 12, 12);
+    },
+  },
+
+  callout: {
+    name: "Callout", icon: "❖",
+    defaults: {
+      type: "tip",
+      tag: "",
+      title: "Title",
+      text: "Body description",
+      action: "Action",
+      href: "",
+    },
+    fields: [
+      { key: "type",   label: "Status type", type: "select", options: STATUS_OPTIONS },
+      { key: "tag",    label: "Chip label (blank = status name)", type: "text" },
+      { key: "title",  label: "Title", type: "text" },
+      { key: "text",   label: "Body description", type: "textarea" },
+      { key: "action", label: "Action label (optional)", type: "text" },
+      { key: "href",   label: "Action link (optional)", type: "text", placeholder: "https://…" },
+    ],
+    render: (d, t) => {
+      const s = STATUS[d.type] || STATUS.tip;
+      const fill = tint(s.color);
+      const chip = chipMarkup((d.tag && d.tag.trim()) || s.label, s, t, "", "6px 12px");
+      const title = d.title
+        ? `<div style="font-family:${t.serif};font-weight:500;font-size:24px;line-height:1.25;color:${t.white};margin:24px 0 0;">${esc(d.title)}</div>`
+        : "";
+      const body = d.text
+        ? richText(d.text, `margin:10px 0 0;font-family:${t.sans};font-size:16px;line-height:1.6;color:${t.secondary};`)
+        : "";
+      let action = "";
+      if (d.action) {
+        const inner = `<span style="font-family:${t.sans};font-weight:700;font-size:15px;color:${t.white};">${esc(d.action)}</span>`;
+        action = `<div style="margin-top:24px;">${d.href ? `<a href="${esc(d.href)}" target="_blank" style="text-decoration:none;">${inner}</a>` : inner}</div>`;
+      }
+      // Box: 10% tint fill, rounded, with a thick status-colored TOP border.
+      return row(
+        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${fill}" style="background:${fill};border-radius:10px;border-top:3px solid ${s.color};">
+           <tr><td style="padding:32px 32px 34px;">${chip}${title}${body}${action}</td></tr>
+         </table>`,
+        14, 14
+      );
+    },
+  },
+
+  image: {
+    name: "Image", icon: "▣",
+    defaults: { src: "", alt: "", caption: "" },
+    fields: [
+      { key: "src",     label: "Image URL", type: "text", placeholder: "https://…" },
+      { key: "alt",     label: "Alt text", type: "text" },
+      { key: "caption", label: "Caption (optional)", type: "text" },
+    ],
+    render: (d, t) => {
+      const src = d.src ||
+        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='584' height='300'%3E%3Crect width='584' height='300' fill='%23232323'/%3E%3Ctext x='50%25' y='50%25' fill='%237c7c7c' font-family='Inter,Arial' font-size='14' text-anchor='middle' dominant-baseline='middle'%3EImage URL%3C/text%3E%3C/svg%3E";
+      const cap = d.caption ? `<div style="font-family:${t.sans};font-size:12px;color:${t.muted};margin-top:10px;">${esc(d.caption)}</div>` : "";
+      return row(
+        `<img src="${esc(src)}" alt="${esc(d.alt)}" width="584" style="display:block;width:100%;max-width:584px;height:auto;border:0;border-radius:6px;outline:none;text-decoration:none;" />${cap}`,
+        14, 14
+      );
+    },
+  },
+
+  button: {
+    name: "Button / CTA", icon: "▭",
+    defaults: { label: "Enter", href: "https://", accent: "teal" },
+    fields: [
+      { key: "label", label: "Button label", type: "text" },
+      { key: "href",  label: "Link URL", type: "text", placeholder: "https://…" },
+      { key: "accent", label: "Color", type: "swatch" },
+    ],
+    render: (d, t) => {
+      const fill = ACCENTS[d.accent] || t.teal;
+      const fg = ON_ACCENT[d.accent] || "#ffffff";
+      return row(
+        `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+           <td bgcolor="${fill}" style="border-radius:6px;">
+             <a href="${esc(d.href)}" target="_blank" style="display:inline-block;padding:15px 34px;font-family:${t.sans};font-size:14px;font-weight:600;letter-spacing:0.02em;color:${fg};text-decoration:none;border-radius:6px;">${esc(d.label)}</a>
+           </td>
+         </tr></table>`,
+        14, 14
+      );
+    },
+  },
+
+  divider: {
+    name: "Divider", icon: "─",
+    defaults: {},
+    fields: [],
+    render: (d, t) => row(
+      `<div style="border-top:1px solid ${t.border};font-size:0;line-height:0;">&nbsp;</div>`,
+      18, 18
+    ),
+  },
+
+  spacer: {
+    name: "Spacer", icon: "↕",
+    defaults: { size: "32" },
+    fields: [{ key: "size", label: "Height (px)", type: "number" }],
+    render: (d, t) => `<tr><td style="font-size:0;line-height:0;height:${parseInt(d.size) || 32}px;">&nbsp;</td></tr>`,
+  },
+
+  footer: {
+    name: "Footer", icon: "▁",
+    defaults: { left: "© 2026 BIZACUMEN", right: "INTERNAL · COHORT 04" },
+    fields: [
+      { key: "left",  label: "Left label", type: "text" },
+      { key: "right", label: "Right label", type: "text" },
+    ],
+    render: (d, t) => {
+      const s = `font-family:${t.sans};font-size:11px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:${t.muted};`;
+      return row(
+        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+           <td align="left" style="${s}">${esc(d.left)}</td>
+           <td align="right" style="${s}">${esc(d.right)}</td>
+         </tr></table>`,
+        40, 48,
+        `border-top:1px solid ${t.border};`
+      );
+    },
+  },
+};
+
+const ORDER = ["masthead","hero","lead","heading","paragraph","stat","tags","quote","callout","image","button","divider","spacer","footer"];
+
+/* ---------------------------------------------------------------------
+   State
+   --------------------------------------------------------------------- */
+const STORE_KEY = "ccc-newsletter-builder-v1";
+let state = load() || templateSpringIssue();
+let selectedId = state.blocks[0]?.id || null;
+
+function newBlock(type) {
+  return { id: uid(), type, data: structuredClone(DEFS[type].defaults) };
+}
+function sample() {
+  return {
+    settings: {
+      subject: "The business of design — Vol. 04",
+      preheader: "A practice tool for designers learning to speak the language of business.",
+    },
+    blocks: [
+      newBlock("masthead"),
+      newBlock("hero"),
+      newBlock("lead"),
+      { id: uid(), type: "button", data: { label: "Start this week’s drill", href: "https://", accent: "teal" } },
+      newBlock("divider"),
+      { id: uid(), type: "heading", data: { eyebrow: "THIS ISSUE", text: "Reading the room — and the balance sheet." } },
+      { id: uid(), type: "paragraph", data: { text: "Most design decisions are business decisions wearing a portfolio. This issue breaks down how to frame your work in the language stakeholders already speak: margin, retention, and risk.\n\nWork through the drill, then compare your framing with the cohort." } },
+      { id: uid(), type: "tags", data: { items: "Strategy, Pricing, Retention", type: "info", icon: "on" } },
+      newBlock("stat"),
+      { id: uid(), type: "callout", data: { type: "tip", tag: "", title: "Key takeaway", text: "Frame design decisions in the language stakeholders already speak: margin, retention, and risk.", action: "Start the drill", href: "" } },
+      newBlock("quote"),
+      newBlock("footer"),
+    ],
+  };
+}
+// A complete, polished newsletter template — a real "Business Acumen" issue
+// using the full component set and the CCC design system.
+function templateSpringIssue() {
+  const b = (type, data) => ({ id: uid(), type, data });
+  return {
+    settings: {
+      subject: "The Business of Design — Vol. 04: Reading the Balance Sheet",
+      preheader: "Three moves to frame your design work in the language of margin, retention, and risk.",
+    },
+    blocks: [
+      b("masthead", { issue: "VOL. 04 · SPRING 2026", section: "BUSINESS ACUMEN" }),
+      b("hero", { text: "The business of design.", emphasis: "design.", accent: "yellow" }),
+      b("lead", { text: "A practice tool for designers learning to speak the language of business — one issue, one drill, one balance sheet at a time." }),
+      b("tags", { items: "Strategy, Pricing, Stakeholders", type: "info", icon: "off" }),
+      b("button", { label: "Start this week’s drill", href: "https://bizacumen.example/drill", accent: "teal" }),
+      b("divider", {}),
+
+      b("heading", { eyebrow: "THIS ISSUE", text: "Reading the room — and the balance sheet." }),
+      b("paragraph", { text: "Most design decisions are business decisions wearing a portfolio. This issue breaks down how to frame your work in the language stakeholders already speak: margin, retention, and risk.\n\nWork through the drill below, then compare your framing with the rest of the cohort in your Local Design Jam." }),
+      b("stat", { value: "73%", label: "of designers can’t read a P&L — yet", accent: "yellow" }),
+      b("callout", { type: "tip", tag: "", title: "Key takeaway", text: "Frame every design decision as a business decision: what it protects, what it grows, and what it de-risks.", action: "Read the full breakdown", href: "https://bizacumen.example/takeaway" }),
+      b("quote", { text: "Design is the silent ambassador of your brand.", cite: "Paul Rand" }),
+      b("divider", {}),
+
+      b("heading", { eyebrow: "DRILL 04", text: "The S-model: three moves for every kickoff." }),
+      b("paragraph", { text: "Before you open the canvas, practice uncovering business context. Run these three moves in your next kickoff and note what changes about the brief." }),
+      b("tags", { items: "Diagnose, Stakeholder, Deliver", type: "success", icon: "off" }),
+      b("callout", { type: "resource", tag: "", title: "Workshop this Thursday", text: "Tune in to your Local Design Jam for the follow-up workshop on measuring business value.", action: "Add to calendar", href: "https://bizacumen.example/calendar" }),
+      b("button", { label: "Submit your drill", href: "https://bizacumen.example/submit", accent: "yellow" }),
+
+      b("footer", { left: "© 2026 BIZACUMEN", right: "INTERNAL · COHORT 04" }),
+    ],
+  };
+}
+
+// A second, fully-written issue — composed from the blocks. Showcases the
+// tip / resource / warning callout types, two tag rows, a stat and a quote.
+function templateSummerIssue() {
+  const b = (type, data) => ({ id: uid(), type, data });
+  return {
+    settings: {
+      subject: "The Business of Design — Vol. 05: The Redesign That Paid for Itself",
+      preheader: "CAC, LTV, payback — the three numbers that turn a redesign into a budget line.",
+    },
+    blocks: [
+      b("masthead", { issue: "VOL. 05 · SUMMER 2026", section: "BUSINESS ACUMEN" }),
+      b("hero", { text: "Follow the money.", emphasis: "money.", accent: "yellow" }),
+      b("lead", { text: "Every redesign has a price and a payback. This issue gives you the three numbers that turn “it looks better” into “it earns more.”" }),
+      b("tags", { items: "Unit Economics, CAC, LTV", type: "info", icon: "off" }),
+      b("button", { label: "Open Drill 05", href: "https://bizacumen.example/drill-05", accent: "teal" }),
+      b("divider", {}),
+
+      b("heading", { eyebrow: "THIS ISSUE", text: "The three numbers behind every redesign." }),
+      b("paragraph", { text: "When you pitch a redesign, leadership hears a cost. Your job is to translate craft into the language of return: how much it costs to win a customer (CAC), how much that customer is worth over time (LTV), and how fast the spend pays back.\n\nGet fluent in these three and you stop defending pixels — you start defending margin." }),
+      b("stat", { value: "3.1×", label: "median LTV:CAC ratio of teams that test pricing", accent: "yellow" }),
+      b("callout", { type: "tip", tag: "", title: "Key takeaway", text: "A redesign that lifts conversion by even 1% changes CAC for every channel at once. Frame the win per-acquisition, not per-screen.", action: "See the worked example", href: "https://bizacumen.example/example" }),
+      b("quote", { text: "Price is what you pay. Value is what you get.", cite: "Warren Buffett" }),
+      b("divider", {}),
+
+      b("heading", { eyebrow: "DRILL 05", text: "Put a number on your last project." }),
+      b("paragraph", { text: "Take a project you shipped this year. Estimate the before/after conversion, multiply by traffic and average order value, and annualize it. Bring the number — not the screens — to your next review." }),
+      b("tags", { items: "Estimate, Annualize, Defend", type: "success", icon: "off" }),
+      b("callout", { type: "warning", tag: "", title: "Watch the denominator", text: "A flashy conversion lift on tiny traffic is noise. State the sample size before you state the win.", action: "", href: "" }),
+      b("callout", { type: "resource", tag: "", title: "Office hours this Friday", text: "Bring your number to the Local Design Jam. We’ll pressure-test the assumptions together and sharpen the story.", action: "Reserve a slot", href: "https://bizacumen.example/office-hours" }),
+      b("button", { label: "Submit your number", href: "https://bizacumen.example/submit", accent: "yellow" }),
+
+      b("footer", { left: "© 2026 BIZACUMEN", right: "INTERNAL · COHORT 05" }),
+    ],
+  };
+}
+
+// Loadable templates (shown in the topbar picker)
+const TEMPLATES = {
+  spring:  { label: "Business Acumen — Spring Issue", build: templateSpringIssue },
+  summer:  { label: "Business Acumen — Summer Issue", build: templateSummerIssue },
+  sample:  { label: "Basic sample", build: sample },
+};
+
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch {} }
+function load() { try { return JSON.parse(localStorage.getItem(STORE_KEY)); } catch { return null; } }
+
+/* ---------------------------------------------------------------------
+   Email document builder
+   --------------------------------------------------------------------- */
+function buildEmail(s) {
+  const t = THEME;
+  const body = s.blocks.map(b => DEFS[b.type].render(b.data, t)).join("\n");
+  const pre = esc(s.settings.preheader || "");
+  return `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="x-apple-disable-message-reformatting" />
+<title>${esc(s.settings.subject || "Newsletter")}</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin:0; padding:0; background:${t.bg}; }
+  img { -ms-interpolation-mode:bicubic; }
+  a { color:${t.yellow}; }
+  @media only screen and (max-width:600px) {
+    .container { width:100% !important; }
+    .px { padding-left:24px !important; padding-right:24px !important; }
+    .hero { font-size:42px !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:${t.bg};">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${t.bg};font-size:1px;line-height:1px;">${pre}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${t.bg}" style="background:${t.bg};">
+  <tr>
+    <td align="center" style="padding:0 16px;">
+      <table role="presentation" class="container" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:680px;background:${t.bg};">
+${body}
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>`;
+}
+
+/* ---------------------------------------------------------------------
+   Render: editor panel
+   --------------------------------------------------------------------- */
+function renderPalette() {
+  const pal = $("#palette");
+  pal.innerHTML = ORDER.map(type =>
+    `<button class="btn btn-outline" data-add="${type}"><span class="ico">${DEFS[type].icon}</span>${DEFS[type].name}</button>`
+  ).join("");
+}
+
+function fieldHTML(block, f) {
+  const v = block.data[f.key] ?? "";
+  const id = `${block.id}-${f.key}`;
+  if (f.type === "textarea") {
+    return `<div class="field">
+      <label class="lbl" for="${id}">${f.label}</label>
+      <textarea class="textarea" id="${id}" data-block="${block.id}" data-key="${f.key}" placeholder="${esc(f.placeholder||"")}">${esc(v)}</textarea>
+    </div>`;
+  }
+  if (f.type === "swatch") {
+    const opts = Object.keys(ACCENTS).map(c =>
+      `<button type="button" class="swatch ${v===c?"active":""}" style="background:${ACCENTS[c]}" title="${c}" data-block="${block.id}" data-key="${f.key}" data-val="${c}"></button>`
+    ).join("");
+    return `<div class="field"><label class="lbl">${f.label}</label><div class="swatches">${opts}</div></div>`;
+  }
+  if (f.type === "select") {
+    const opts = f.options.map(o =>
+      `<option value="${esc(o.value)}" ${v===o.value?"selected":""}>${esc(o.label)}</option>`
+    ).join("");
+    return `<div class="field">
+      <label class="lbl" for="${id}">${f.label}</label>
+      <select class="select" id="${id}" data-block="${block.id}" data-key="${f.key}">${opts}</select>
+    </div>`;
+  }
+  const type = f.type === "number" ? "number" : "text";
+  return `<div class="field">
+    <label class="lbl" for="${id}">${f.label}</label>
+    <input class="input" type="${type}" id="${id}" data-block="${block.id}" data-key="${f.key}" value="${esc(v)}" placeholder="${esc(f.placeholder||"")}" />
+  </div>`;
+}
+
+function renderBlocks() {
+  const wrap = $("#blocks");
+  if (!state.blocks.length) {
+    wrap.innerHTML = `<div class="empty-hint">No blocks yet.<br>Add one from the palette above.</div>`;
+    return;
+  }
+  wrap.innerHTML = state.blocks.map((b, i) => {
+    const def = DEFS[b.type];
+    const fields = def.fields.map(f => fieldHTML(b, f)).join("") ||
+      `<p style="margin:0;color:var(--muted-foreground);font-size:13px;">No options for this block.</p>`;
+    return `<div class="block-card ${b.id===selectedId?"selected":""}" data-id="${b.id}">
+      <div class="block-head" data-select="${b.id}">
+        <button class="mini handle" data-handle title="Drag to reorder" aria-label="Drag to reorder">⠿</button>
+        <span class="type"><span class="badge">${def.icon}</span>${def.name}</span>
+        <span class="grow"></span>
+        <button class="mini" data-move="up"   data-id="${b.id}" ${i===0?"disabled":""} title="Move up">↑</button>
+        <button class="mini" data-move="down" data-id="${b.id}" ${i===state.blocks.length-1?"disabled":""} title="Move down">↓</button>
+        <button class="mini" data-dup="${b.id}" title="Duplicate">⧉</button>
+        <button class="mini danger" data-del="${b.id}" title="Delete">✕</button>
+      </div>
+      <div class="block-body">${fields}</div>
+    </div>`;
+  }).join("");
+}
+
+// full design-system palette, grouped, rendered as click-to-copy chips
+const PALETTE_GROUPS = [
+  { name: "Accents", colors: [
+    ["Teal", "teal"], ["Blue", "blue"], ["Purple", "purple"],
+    ["Pink", "pink"], ["Orange", "orange"], ["Yellow", "yellow"],
+  ] },
+  { name: "Base colors", colors: [
+    ["Black", "bg"], ["Dark Gray", "darkGray"], ["Medium Gray", "mediumGray"],
+    ["Light Gray", "lightGray"], ["White", "white"],
+  ] },
+];
+function renderPaletteRef() {
+  const el = $("#paletteRef");
+  el.innerHTML = PALETTE_GROUPS.map(g => `
+    <div class="group">
+      <span class="group-name">${g.name}</span>
+      <div class="swatch-grid">
+        ${g.colors.map(([nm, key]) => {
+          const hex = THEME[key];
+          return `<button type="button" class="chip" data-copy-hex="${hex}" title="Copy ${hex}">
+            <span class="dot" style="background:${hex}"></span>
+            <span class="meta"><span class="nm">${nm}</span><span class="hex">${hex}</span></span>
+          </button>`;
+        }).join("")}
+      </div>
+    </div>`).join("");
+}
+
+function renderPreview() {
+  const frame = $("#previewFrame");
+  const doc = frame.contentDocument || frame.contentWindow.document;
+  doc.open(); doc.write(buildEmail(state)); doc.close();
+}
+
+function renderSettings() {
+  $$("[data-setting]").forEach(el => { el.value = state.settings[el.dataset.setting] || ""; });
+}
+
+function renderAll() {
+  renderBlocks();
+  renderPreview();
+  save();
+}
+
+/* ---------------------------------------------------------------------
+   Events
+   --------------------------------------------------------------------- */
+function findIndex(id) { return state.blocks.findIndex(b => b.id === id); }
+
+document.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-copy-hex]");
+  if (chip) { copyText(chip.dataset.copyHex); return; }
+
+  const t = e.target.closest("[data-add],[data-select],[data-move],[data-del],[data-dup],[data-val]");
+  if (!t) return;
+
+  if (t.dataset.add) {
+    const blk = newBlock(t.dataset.add);
+    const at = selectedId ? findIndex(selectedId) + 1 : state.blocks.length;
+    state.blocks.splice(at, 0, blk);
+    selectedId = blk.id;
+    renderAll();
+  } else if (t.dataset.select) {
+    selectedId = selectedId === t.dataset.select ? null : t.dataset.select;
+    renderBlocks();
+  } else if (t.dataset.move) {
+    const i = findIndex(t.dataset.id);
+    const j = t.dataset.move === "up" ? i - 1 : i + 1;
+    if (j < 0 || j >= state.blocks.length) return;
+    [state.blocks[i], state.blocks[j]] = [state.blocks[j], state.blocks[i]];
+    renderAll();
+  } else if (t.dataset.dup) {
+    const i = findIndex(t.dataset.dup);
+    const copy = { id: uid(), type: state.blocks[i].type, data: structuredClone(state.blocks[i].data) };
+    state.blocks.splice(i + 1, 0, copy);
+    selectedId = copy.id;
+    renderAll();
+  } else if (t.dataset.del) {
+    state.blocks = state.blocks.filter(b => b.id !== t.dataset.del);
+    if (selectedId === t.dataset.del) selectedId = null;
+    renderAll();
+  } else if (t.dataset.val) {
+    const b = state.blocks[findIndex(t.dataset.block)];
+    if (b) { b.data[t.dataset.key] = t.dataset.val; renderAll(); }
+  }
+});
+
+// live field edits (input updates preview without losing focus)
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (el.dataset.setting) {
+    state.settings[el.dataset.setting] = el.value;
+    renderPreview(); save(); return;
+  }
+  if (el.dataset.block && el.dataset.key) {
+    const b = state.blocks[findIndex(el.dataset.block)];
+    if (b) { b.data[el.dataset.key] = el.value; renderPreview(); save(); }
+  }
+});
+
+/* ----- Drag & drop reordering -------------------------------------- */
+// Dragging is "armed" only via the handle so inputs/textareas stay editable.
+let armedCard = null;   // card made draggable by a handle mousedown
+let dragId = null;      // id of the block currently being dragged
+
+const blocksEl = $("#blocks");
+
+function disarm() {
+  if (armedCard) { armedCard.draggable = false; armedCard = null; }
+}
+function clearMarkers() {
+  $$(".block-card", blocksEl).forEach(c => c.classList.remove("drop-before", "drop-after", "dragging"));
+}
+
+blocksEl.addEventListener("mousedown", (e) => {
+  const handle = e.target.closest("[data-handle]");
+  if (!handle) return;
+  const card = handle.closest(".block-card");
+  if (!card) return;
+  disarm();
+  armedCard = card;
+  card.draggable = true;
+});
+document.addEventListener("mouseup", disarm);
+
+blocksEl.addEventListener("dragstart", (e) => {
+  const card = e.target.closest(".block-card");
+  if (!card || !card.draggable) { e.preventDefault(); return; }
+  dragId = card.dataset.id;
+  card.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", dragId);
+});
+
+blocksEl.addEventListener("dragover", (e) => {
+  if (dragId == null) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  const over = e.target.closest(".block-card");
+  $$(".block-card", blocksEl).forEach(c => c.classList.remove("drop-before", "drop-after"));
+  if (!over || over.dataset.id === dragId) return;
+  const r = over.getBoundingClientRect();
+  const after = e.clientY > r.top + r.height / 2;
+  over.classList.add(after ? "drop-after" : "drop-before");
+});
+
+blocksEl.addEventListener("drop", (e) => {
+  if (dragId == null) return;
+  e.preventDefault();
+  const over = e.target.closest(".block-card");
+  const from = findIndex(dragId);
+  if (over && over.dataset.id !== dragId && from >= 0) {
+    const r = over.getBoundingClientRect();
+    const after = e.clientY > r.top + r.height / 2;
+    let to = findIndex(over.dataset.id) + (after ? 1 : 0);
+    const [moved] = state.blocks.splice(from, 1);
+    if (from < to) to--;             // account for the removed item
+    state.blocks.splice(to, 0, moved);
+    selectedId = dragId;
+    renderAll();
+  }
+  dragId = null;
+});
+
+blocksEl.addEventListener("dragend", () => {
+  dragId = null;
+  clearMarkers();
+  disarm();
+});
+
+// viewport toggle
+$("#viewport").addEventListener("click", (e) => {
+  const btn = e.target.closest("button"); if (!btn) return;
+  $$("#viewport button").forEach(b => b.classList.toggle("active", b === btn));
+  $("#previewScroll").dataset.w = btn.dataset.w;
+});
+
+// topbar actions — template picker
+(function initTemplatePicker() {
+  const sel = $("#templatePicker");
+  sel.innerHTML = `<option value="" disabled selected>Load template…</option>` +
+    Object.entries(TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join("");
+  sel.addEventListener("change", () => {
+    const tpl = TEMPLATES[sel.value];
+    if (!tpl) return;
+    state = tpl.build();
+    selectedId = state.blocks[0]?.id || null;
+    renderSettings(); renderAll();
+    toast(`${tpl.label} loaded`);
+    sel.value = "";
+  });
+})();
+$("#btnReset").addEventListener("click", () => {
+  if (!confirm("Clear all blocks and settings?")) return;
+  state = { settings: { subject: "", preheader: "" }, blocks: [] };
+  selectedId = null; renderSettings(); renderAll(); toast("Cleared");
+});
+
+// ---- Sending ---------------------------------------------------------
+// The newsletter is sent FROM this address (fixed for the site).
+const SEND_FROM = "DesignBusinessAcumen@telusdigital.com";
+// Backend endpoint that actually delivers the mail (e.g. nodemailer / an
+// email API). Override via window.SEND_ENDPOINT before app.js loads.
+const SEND_ENDPOINT = (typeof window !== "undefined" && window.SEND_ENDPOINT) || "/api/send";
+
+function openSend() {
+  $("#sendFrom").value = SEND_FROM;
+  $("#sendSubject").value = state.settings.subject || "";
+  if (!$("#sendTo").value) $("#sendTo").value = localStorage.getItem("ccc-nl-recipients") || "";
+  $("#exportCode").value = buildEmail(state);
+  $("#exportDialog").classList.add("open");
+}
+$("#btnSend").addEventListener("click", openSend);
+$("#btnCloseDialog").addEventListener("click", () => $("#exportDialog").classList.remove("open"));
+$("#exportDialog").addEventListener("click", (e) => { if (e.target.id === "exportDialog") e.currentTarget.classList.remove("open"); });
+
+function parseRecipients(raw) {
+  return (raw || "").split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+}
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+const btnSendNow = $("#btnSendNow");
+$("#btnSendNow").addEventListener("click", async () => {
+  const to = parseRecipients($("#sendTo").value);
+  const subject = $("#sendSubject").value.trim();
+  if (!to.length) { toast("Add at least one recipient"); $("#sendTo").focus(); return; }
+  const bad = to.find(a => !EMAIL_RE.test(a));
+  if (bad) { toast(`Invalid email: ${bad}`); $("#sendTo").focus(); return; }
+  if (!subject) { toast("Add a subject"); $("#sendSubject").focus(); return; }
+
+  localStorage.setItem("ccc-nl-recipients", to.join(", "));
+  const payload = { from: SEND_FROM, to, subject, html: buildEmail(state) };
+
+  btnSendNow.disabled = true;
+  const label = btnSendNow.textContent;
+  btnSendNow.textContent = "Sending…";
+  try {
+    const headers = { "Content-Type": "application/json" };
+    // Attach the OIDC access token so the API can authorize the request.
+    // Gizmos/OIDC integration provides the token via window.getAccessToken().
+    try {
+      const token = typeof window.getAccessToken === "function" ? await window.getAccessToken() : null;
+      if (token) headers.Authorization = `Bearer ${token}`;
+    } catch { /* fall through — server will 401 if required */ }
+
+    const res = await fetch(SEND_ENDPOINT, {
+      method: "POST",
+      headers,
+      credentials: "same-origin",
+      body: JSON.stringify(payload),
+    });
+    if (res.status === 401 || res.status === 403) { toast("Not authorized — sign in with your TELUS account"); return; }
+    if (res.status === 429) { toast("Too many sends — wait a minute and try again"); return; }
+    if (!res.ok) { let m = "Send failed, please try again"; try { m = (await res.json()).error || m; } catch {} toast(m); return; }
+    const data = await res.json().catch(() => ({}));
+    toast(`Sent to ${data.count ?? to.length} recipient${(data.count ?? to.length) > 1 ? "s" : ""}`);
+    $("#exportDialog").classList.remove("open");
+  } catch (err) {
+    // Network error / no backend (e.g. static hosting) → guide the user, keep their work.
+    toast("Couldn’t reach the send service — download/copy the HTML instead");
+    console.warn(`Send failed (${SEND_ENDPOINT}):`, err);
+  } finally {
+    btnSendNow.disabled = false;
+    btnSendNow.textContent = label;
+  }
+});
+
+function copyText(text) {
+  navigator.clipboard?.writeText(text).then(() => toast("Copied to clipboard"))
+    .catch(() => toast("Copy failed — select & copy manually"));
+}
+$("#btnCopyDialog").addEventListener("click", () => copyText(buildEmail(state)));
+$("#btnCopyQuick").addEventListener("click", () => copyText(buildEmail(state)));
+$("#btnDownload").addEventListener("click", () => {
+  const blob = new Blob([buildEmail(state)], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const name = (state.settings.subject || "newsletter").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "newsletter";
+  a.href = url; a.download = `${name}.html`; a.click();
+  URL.revokeObjectURL(url); toast("Downloaded");
+});
+
+let toastTimer;
+function toast(msg) {
+  const el = $("#toast"); el.textContent = msg; el.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") $("#exportDialog").classList.remove("open");
+});
+
+/* ---------------------------------------------------------------------
+   Boot
+   --------------------------------------------------------------------- */
+renderPalette();
+renderPaletteRef();
+renderSettings();
+renderAll();
