@@ -34,6 +34,10 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 const GMAIL_USER = process.env.GMAIL_USER || "";
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || "";
 const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || "Newsletter";
+// Default sender if the request doesn't specify one. NOTE: Gmail only sends
+// from the authenticated account or a verified "Send mail as" alias — any other
+// address is silently rewritten back to GMAIL_USER by Gmail.
+const MAIL_FROM = process.env.MAIL_FROM || GMAIL_USER;
 const RATE_MAX = parseInt(process.env.RATE_MAX || "5", 10);
 const RATE_WINDOW_SEC = parseInt(process.env.RATE_WINDOW_SEC || "60", 10);
 const MAX_RECIPIENTS = parseInt(process.env.MAX_RECIPIENTS || "50", 10);
@@ -88,6 +92,9 @@ app.post("/api/send", sendLimiter, async (req, res) => {
   const replyTo = EMAIL_RE.test(String(body.replyTo || "").trim())
     ? String(body.replyTo).trim()
     : undefined;
+  // Chosen sender (optional). Validated, else fall back to the configured default.
+  const reqFrom = String(body.from || "").trim();
+  const fromAddr = EMAIL_RE.test(reqFrom) ? reqFrom : MAIL_FROM;
 
   if (!recipients.length) return res.status(400).json({ error: "No recipients" });
   if (recipients.length > MAX_RECIPIENTS)
@@ -98,8 +105,8 @@ app.post("/api/send", sendLimiter, async (req, res) => {
 
   try {
     await transporter.sendMail({
-      from: `"${MAIL_FROM_NAME}" <${GMAIL_USER}>`, // Gmail locks From to the authed user
-      to: GMAIL_USER, // visible To = sender; real recipients are BCC'd
+      from: `"${MAIL_FROM_NAME}" <${fromAddr}>`, // Gmail honors this only for the authed user or a verified alias
+      to: fromAddr, // visible To = sender; real recipients are BCC'd
       bcc: recipients,
       replyTo,
       subject,

@@ -786,14 +786,16 @@ $("#btnReset").addEventListener("click", () => {
 });
 
 // ---- Sending ---------------------------------------------------------
-// The newsletter is sent FROM this address (fixed for the site).
-const SEND_FROM = "DesignBusinessAcumen@telusdigital.com";
+// Default From — remembered from the last send. Gmail only honours a From it
+// owns (your authenticated account or a verified "Send mail as" alias);
+// anything else is rewritten back to the account by Gmail.
+const SEND_FROM = localStorage.getItem("ccc-nl-from") || "";
 // Backend endpoint that actually delivers the mail (e.g. nodemailer / an
 // email API). Override via window.SEND_ENDPOINT before app.js loads.
 const SEND_ENDPOINT = (typeof window !== "undefined" && window.SEND_ENDPOINT) || "/api/send";
 
 function openSend() {
-  $("#sendFrom").value = SEND_FROM;
+  $("#sendFrom").value = localStorage.getItem("ccc-nl-from") || "";
   $("#sendSubject").value = state.settings.subject || "";
   if (!$("#sendTo").value) $("#sendTo").value = localStorage.getItem("ccc-nl-recipients") || "";
   $("#exportCode").value = buildEmail(state);
@@ -810,15 +812,19 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const btnSendNow = $("#btnSendNow");
 $("#btnSendNow").addEventListener("click", async () => {
+  const from = $("#sendFrom").value.trim();
   const to = parseRecipients($("#sendTo").value);
   const subject = $("#sendSubject").value.trim();
+  if (from && !EMAIL_RE.test(from)) { toast("From isn’t a valid email address"); $("#sendFrom").focus(); return; }
   if (!to.length) { toast("Add at least one recipient"); $("#sendTo").focus(); return; }
   const bad = to.find(a => !EMAIL_RE.test(a));
   if (bad) { toast(`Invalid email: ${bad}`); $("#sendTo").focus(); return; }
   if (!subject) { toast("Add a subject"); $("#sendSubject").focus(); return; }
 
   localStorage.setItem("ccc-nl-recipients", to.join(", "));
-  const payload = { from: SEND_FROM, to, subject, html: buildEmail(state) };
+  if (from) localStorage.setItem("ccc-nl-from", from);
+  // `from` is optional — server falls back to its configured sender if blank.
+  const payload = { from, to, subject, html: buildEmail(state) };
 
   btnSendNow.disabled = true;
   const label = btnSendNow.textContent;

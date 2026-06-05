@@ -17,6 +17,9 @@ services:
       # Non-secret tunables (override in the dashboard if you like).
       - key: MAIL_FROM_NAME
         value: Newsletter
+      # Default From; must be your Gmail or a verified "Send mail as" alias.
+      - key: MAIL_FROM
+        sync: false
       - key: RATE_MAX
         value: "5"
       - key: RATE_WINDOW_SEC
