@@ -4,7 +4,8 @@
   "private": true,
   "description": "Business Acumen newsletter builder + send endpoint",
   "scripts": {
-    "start": "node server/send-server.js"
+    "start": "node server/send-server.js",
+    "dev": "node --env-file=.env server/send-server.js"
   },
   "engines": {
     "node": ">=18"
