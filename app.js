@@ -1126,7 +1126,7 @@ $("#btnShare").addEventListener("click", async () => {
     const { id } = await res.json();
     const link = `${location.origin}${location.pathname}?id=${id}`;
     await navigator.clipboard.writeText(link);
-    toast("Share link copied to clipboard");
+    toast("Saved — link copied to clipboard");
   } catch {
     // Fallback: encode into the URL hash (works without the server).
     try {
