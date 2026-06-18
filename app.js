@@ -371,7 +371,7 @@ const DEFS = {
     name: "Image", icon: "▣",
     defaults: { src: "", alt: "", caption: "" },
     fields: [
-      { key: "src",     label: "Image URL", type: "text", placeholder: "https://…" },
+      { key: "src",     label: "Image (paste a URL or upload a file)", type: "image", placeholder: "https://…" },
       { key: "alt",     label: "Alt text", type: "text" },
       { key: "caption", label: "Caption (optional)", type: "text" },
     ],
@@ -380,7 +380,7 @@ const DEFS = {
         "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='584' height='300'%3E%3Crect width='584' height='300' fill='%23232323'/%3E%3Ctext x='50%25' y='50%25' fill='%237c7c7c' font-family='Inter,Arial' font-size='14' text-anchor='middle' dominant-baseline='middle'%3EImage URL%3C/text%3E%3C/svg%3E";
       const cap = d.caption ? `<div style="font-family:${t.sans};font-size:12px;color:${t.muted};margin-top:10px;">${esc(d.caption)}</div>` : "";
       return row(
-        `<img src="${esc(src)}" alt="${esc(d.alt)}" width="584" style="display:block;width:100%;max-width:584px;height:auto;border:0;border-radius:6px;outline:none;text-decoration:none;" />${cap}`,
+        `<img src="${esc(src)}" alt="${esc(d.alt)}" width="584" referrerpolicy="no-referrer" style="display:block;width:100%;max-width:584px;height:auto;border:0;border-radius:6px;outline:none;text-decoration:none;" />${cap}`,
         14, 14
       );
     },
@@ -688,11 +688,53 @@ function fieldHTML(block, f) {
       <select class="select" id="${id}" data-block="${block.id}" data-key="${f.key}">${opts}</select>
     </div>`;
   }
+  if (f.type === "image") {
+    // value may be a pasted URL or an embedded data: URI from an upload
+    const uploaded = typeof v === "string" && v.startsWith("data:");
+    const urlVal = uploaded ? "" : v;
+    const status = uploaded
+      ? `<span style="font-size:12px;color:${THEME.yellow};">✓ uploaded</span>
+         <button type="button" class="link-btn" data-clear-img data-block="${block.id}" data-key="${f.key}" style="background:none;border:0;color:${THEME.muted};font-size:12px;cursor:pointer;padding:0;text-decoration:underline;">remove</button>`
+      : "";
+    return `<div class="field">
+      <label class="lbl" for="${id}">${f.label}</label>
+      <input class="input" type="text" id="${id}" data-block="${block.id}" data-key="${f.key}" value="${esc(urlVal)}" placeholder="${esc(f.placeholder||"https://…")}" />
+      <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+        <label class="btn btn-outline" style="margin:0;cursor:pointer;">Upload image…<input type="file" accept="image/*" data-upload="1" data-block="${block.id}" data-key="${f.key}" style="display:none;" /></label>
+        ${status}
+      </div>
+    </div>`;
+  }
   const type = f.type === "number" ? "number" : "text";
   return `<div class="field">
     <label class="lbl" for="${id}">${f.label}</label>
     <input class="input" type="${type}" id="${id}" data-block="${block.id}" data-key="${f.key}" value="${esc(v)}" placeholder="${esc(f.placeholder||"")}" />
   </div>`;
+}
+
+// Read an uploaded file, downscale to maxW, and return a data: URI via cb().
+// Keeps PNG/transparency; re-encodes everything else as JPEG to keep size sane
+// (big images otherwise blow the localStorage quota and bloat the email).
+function fileToDataUrl(file, maxW, cb) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      const keep = /png|gif|webp|svg/i.test(file.type);
+      if (!keep) { ctx.fillStyle = THEME.bg; ctx.fillRect(0, 0, w, h); } // flatten onto theme bg
+      ctx.drawImage(img, 0, 0, w, h);
+      try { cb(canvas.toDataURL(keep ? "image/png" : "image/jpeg", 0.85)); }
+      catch { cb(reader.result); } // tainted/unsupported → use original
+    };
+    img.onerror = () => cb(reader.result);
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
 }
 
 function renderBlocks() {
@@ -773,6 +815,13 @@ document.addEventListener("click", (e) => {
   const chip = e.target.closest("[data-copy-hex]");
   if (chip) { copyText(chip.dataset.copyHex); return; }
 
+  const clr = e.target.closest("[data-clear-img]");
+  if (clr) {
+    const b = state.blocks[findIndex(clr.dataset.block)];
+    if (b) { b.data[clr.dataset.key] = ""; renderBlocks(); renderPreview(); save(); }
+    return;
+  }
+
   const t = e.target.closest("[data-add],[data-select],[data-move],[data-del],[data-dup],[data-val]");
   if (!t) return;
 
@@ -805,6 +854,19 @@ document.addEventListener("click", (e) => {
     const b = state.blocks[findIndex(t.dataset.block)];
     if (b) { b.data[t.dataset.key] = t.dataset.val; renderAll(); }
   }
+});
+
+// image upload → embed a downscaled data: URI into the block
+document.addEventListener("change", (e) => {
+  const el = e.target;
+  if (!el.dataset.upload || !el.files || !el.files[0]) return;
+  const b = state.blocks[findIndex(el.dataset.block)];
+  if (!b) return;
+  const key = el.dataset.key;
+  fileToDataUrl(el.files[0], 1200, (out) => {
+    b.data[key] = out;
+    renderBlocks(); renderPreview(); save();
+  });
 });
 
 // live field edits (input updates preview without losing focus)
