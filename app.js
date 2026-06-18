@@ -53,6 +53,8 @@ const STATUS = {
   resource: { color: THEME.blue,   glyph: "◆", label: "Resource" },// confirmed: RESOURCE = blue
 };
 const STATUS_OPTIONS = Object.entries(STATUS).map(([value, s]) => ({ value, label: s.label }));
+// Show/Hide toggle for the optional status chip on callouts.
+const CHIP_TOGGLE = [{ value: "on", label: "Show" }, { value: "off", label: "Hide" }];
 
 // Shared status chip (outlined rectangle) used by Tags and inside Callouts.
 function chipMarkup(label, s, t, margin = "", padding = "9px 16px") {
@@ -104,6 +106,36 @@ function emphasize(escapedText, phrase, color) {
 // standard block row: vertical padding inline, horizontal padding via .px (responsive)
 function row(content, vTop, vBot, extra = "") {
   return `<tr><td class="px" style="padding:${vTop}px 48px ${vBot}px 48px;${extra}">${content}</td></tr>`;
+}
+
+// Callout box (10% tint fill, rounded, thick status-colored top border).
+// Shared by the single Callout block and the 2-up Callouts block.
+function calloutBox(d, t) {
+  const s = STATUS[d.type] || STATUS.tip;
+  const fill = tint(s.color);
+  const chip = d.chip === "off"
+    ? ""
+    : chipMarkup((d.tag && d.tag.trim()) || s.label, s, t, "", "6px 12px");
+  // when the chip is hidden, the title sits flush against the box's top padding
+  const title = d.title
+    ? `<div style="font-family:${t.serif};font-weight:500;font-size:24px;line-height:1.25;color:${t.white};margin:${chip ? 24 : 0}px 0 0;">${esc(d.title)}</div>`
+    : "";
+  const body = d.text
+    ? richText(d.text, `margin:10px 0 0;font-family:${t.sans};font-size:16px;line-height:1.6;color:${t.secondary};`)
+    : "";
+  let action = "";
+  if (d.action) {
+    // Outlined "ghost" button in the callout's own status color — distinct from
+    // the cards block's solid accent button.
+    const btnStyle = `display:inline-block;font-family:${t.sans};font-size:15px;font-weight:600;letter-spacing:0.01em;color:${s.color};text-decoration:none;`;
+    const inner = d.href
+      ? `<a href="${esc(d.href)}" target="_blank" style="${btnStyle}">${esc(d.action)} &rarr;</a>`
+      : `<span style="${btnStyle}">${esc(d.action)} &rarr;</span>`;
+    action = `<div style="margin-top:26px;">${inner}</div>`;
+  }
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${fill}" style="background:${fill};border-radius:10px;border-top:3px solid ${s.color};">
+           <tr><td style="padding:32px 32px 34px;">${chip}${title}${body}${action}</td></tr>
+         </table>`;
 }
 
 /* ---------------------------------------------------------------------
@@ -247,6 +279,7 @@ const DEFS = {
     name: "Callout", icon: "❖",
     defaults: {
       type: "tip",
+      chip: "on",
       tag: "",
       title: "Title",
       text: "Body description",
@@ -255,32 +288,54 @@ const DEFS = {
     },
     fields: [
       { key: "type",   label: "Status type", type: "select", options: STATUS_OPTIONS },
+      { key: "chip",   label: "Chip", type: "select", options: CHIP_TOGGLE },
       { key: "tag",    label: "Chip label (blank = status name)", type: "text" },
       { key: "title",  label: "Title", type: "text" },
       { key: "text",   label: "Body description", type: "textarea" },
       { key: "action", label: "Action label (optional)", type: "text" },
       { key: "href",   label: "Action link (optional)", type: "text", placeholder: "https://…" },
     ],
+    render: (d, t) => row(calloutBox(d, t), 14, 14),
+  },
+
+  callouts: {
+    name: "Callouts (2-up)", icon: "❖❖",
+    defaults: {
+      type1: "tip",      chip1: "on", tag1: "", title1: "Key takeaway",
+      text1: "Frame design decisions in the language stakeholders speak.",
+      action1: "", href1: "",
+      type2: "resource", chip2: "on", tag2: "", title2: "Workshop this Thursday",
+      text2: "Tune in to your Local Design Jam for the follow-up workshop.",
+      action2: "Add to calendar", href2: "",
+    },
+    fields: [
+      { key: "type1",   label: "Card 1 — status type", type: "select", options: STATUS_OPTIONS },
+      { key: "chip1",   label: "Card 1 — chip", type: "select", options: CHIP_TOGGLE },
+      { key: "tag1",    label: "Card 1 — chip label (blank = status name)", type: "text" },
+      { key: "title1",  label: "Card 1 — title", type: "text" },
+      { key: "text1",   label: "Card 1 — body", type: "textarea" },
+      { key: "action1", label: "Card 1 — action label (optional)", type: "text" },
+      { key: "href1",   label: "Card 1 — action link (optional)", type: "text", placeholder: "https://…" },
+      { key: "type2",   label: "Card 2 — status type (blank = single)", type: "select", options: [{ value: "", label: "— none (single card) —" }, ...STATUS_OPTIONS] },
+      { key: "chip2",   label: "Card 2 — chip", type: "select", options: CHIP_TOGGLE },
+      { key: "tag2",    label: "Card 2 — chip label (blank = status name)", type: "text" },
+      { key: "title2",  label: "Card 2 — title", type: "text" },
+      { key: "text2",   label: "Card 2 — body", type: "textarea" },
+      { key: "action2", label: "Card 2 — action label (optional)", type: "text" },
+      { key: "href2",   label: "Card 2 — action link (optional)", type: "text", placeholder: "https://…" },
+    ],
     render: (d, t) => {
-      const s = STATUS[d.type] || STATUS.tip;
-      const fill = tint(s.color);
-      const chip = chipMarkup((d.tag && d.tag.trim()) || s.label, s, t, "", "6px 12px");
-      const title = d.title
-        ? `<div style="font-family:${t.serif};font-weight:500;font-size:24px;line-height:1.25;color:${t.white};margin:24px 0 0;">${esc(d.title)}</div>`
-        : "";
-      const body = d.text
-        ? richText(d.text, `margin:10px 0 0;font-family:${t.sans};font-size:16px;line-height:1.6;color:${t.secondary};`)
-        : "";
-      let action = "";
-      if (d.action) {
-        const inner = `<span style="font-family:${t.sans};font-weight:700;font-size:15px;color:${t.white};">${esc(d.action)}</span>`;
-        action = `<div style="margin-top:24px;">${d.href ? `<a href="${esc(d.href)}" target="_blank" style="text-decoration:none;">${inner}</a>` : inner}</div>`;
-      }
-      // Box: 10% tint fill, rounded, with a thick status-colored TOP border.
+      const pick = n => ({ type: d["type" + n], chip: d["chip" + n], tag: d["tag" + n], title: d["title" + n], text: d["text" + n], action: d["action" + n], href: d["href" + n] });
+      const c1 = calloutBox(pick(1), t);
+      // Card 2 only renders when a status type is chosen — otherwise full-width single.
+      if (!d.type2) return row(c1, 14, 14);
+      const c2 = calloutBox(pick(2), t);
+      // Two columns with a gutter; collapses to stacked full-width under 600px (.card-col CSS).
       return row(
-        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${fill}" style="background:${fill};border-radius:10px;border-top:3px solid ${s.color};">
-           <tr><td style="padding:32px 32px 34px;">${chip}${title}${body}${action}</td></tr>
-         </table>`,
+        `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+           <td class="card-col" width="50%" valign="top" style="padding-right:9px;">${c1}</td>
+           <td class="card-col" width="50%" valign="top" style="padding-left:9px;">${c2}</td>
+         </tr></table>`,
         14, 14
       );
     },
@@ -302,6 +357,57 @@ const DEFS = {
         `<img src="${esc(src)}" alt="${esc(d.alt)}" width="584" style="display:block;width:100%;max-width:584px;height:auto;border:0;border-radius:6px;outline:none;text-decoration:none;" />${cap}`,
         14, 14
       );
+    },
+  },
+
+  cards: {
+    name: "Cards (2-up)", icon: "◫",
+    defaults: {
+      emoji1: "🎥", title1: "Workshop Recording", action1: "Watch", href1: "https://",
+      emoji2: "🗂️", title2: "FigJam Board",       action2: "Open",  href2: "https://",
+      accent: "yellow",
+    },
+    fields: [
+      { key: "emoji1",  label: "Card 1 — emoji / icon", type: "text" },
+      { key: "title1",  label: "Card 1 — title", type: "text" },
+      { key: "action1", label: "Card 1 — button label", type: "text" },
+      { key: "href1",   label: "Card 1 — link", type: "text", placeholder: "https://…" },
+      { key: "emoji2",  label: "Card 2 — emoji / icon (blank = single card)", type: "text" },
+      { key: "title2",  label: "Card 2 — title", type: "text" },
+      { key: "action2", label: "Card 2 — button label", type: "text" },
+      { key: "href2",   label: "Card 2 — link", type: "text", placeholder: "https://…" },
+      { key: "accent",  label: "Button color", type: "swatch" },
+    ],
+    render: (d, t) => {
+      const fill = ACCENTS[d.accent] || t.yellow;
+      const fg = ON_ACCENT[d.accent] || "#1A1A1A";
+      // one card's inner table — fills the width of its column
+      const card = (emoji, title, action, href) => {
+        if (!title && !emoji && !action) return "";
+        const ico = emoji
+          ? `<div style="font-size:30px;line-height:1;">${esc(emoji)}</div>`
+          : "";
+        const ttl = title
+          ? `<div style="font-family:${t.sans};font-weight:700;font-size:19px;line-height:1.3;color:${t.white};margin:18px 0 0;">${esc(title)}</div>`
+          : "";
+        let btn = "";
+        if (action) {
+          const inner = `<a href="${esc(href || "#")}" target="_blank" style="display:inline-block;padding:13px 30px;font-family:${t.sans};font-size:15px;font-weight:700;letter-spacing:0.01em;color:${fg};text-decoration:none;border-radius:6px;">${esc(action)} &rarr;</a>`;
+          btn = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:22px auto 0;"><tr><td bgcolor="${fill}" style="border-radius:6px;">${inner}</td></tr></table>`;
+        }
+        return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${t.surface}" style="background:${t.surface};border-radius:12px;"><tr><td align="center" style="padding:34px 24px 32px;">${ico}${ttl}${btn}</td></tr></table>`;
+      };
+      const c1 = card(d.emoji1, d.title1, d.action1, d.href1);
+      const c2 = card(d.emoji2, d.title2, d.action2, d.href2);
+      // single card → full width; otherwise two columns with a gutter that
+      // collapses to stacked, full-width cards under 600px (see .card-col CSS).
+      const grid = c2
+        ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+             <td class="card-col" width="50%" valign="top" style="padding-right:9px;">${c1}</td>
+             <td class="card-col" width="50%" valign="top" style="padding-left:9px;">${c2}</td>
+           </tr></table>`
+        : c1;
+      return row(grid, 14, 14);
     },
   },
 
@@ -365,7 +471,7 @@ const DEFS = {
   },
 };
 
-const ORDER = ["masthead","hero","lead","heading","paragraph","stat","tags","quote","callout","image","button","divider","spacer","footer"];
+const ORDER = ["masthead","hero","lead","heading","paragraph","stat","tags","quote","callout","callouts","cards","image","button","divider","spacer","footer"];
 
 /* ---------------------------------------------------------------------
    State
@@ -503,6 +609,7 @@ function buildEmail(s) {
     .container { width:100% !important; }
     .px { padding-left:24px !important; padding-right:24px !important; }
     .hero { font-size:42px !important; }
+    .card-col { display:block !important; width:100% !important; padding:0 0 14px 0 !important; }
   }
 </style>
 </head>
@@ -786,16 +893,15 @@ $("#btnReset").addEventListener("click", () => {
 });
 
 // ---- Sending ---------------------------------------------------------
-// Default From — remembered from the last send. Gmail only honours a From it
-// owns (your authenticated account or a verified "Send mail as" alias);
-// anything else is rewritten back to the account by Gmail.
-const SEND_FROM = localStorage.getItem("ccc-nl-from") || "";
+// Fixed sender. The backend sends via the Gmail API as this account
+// (server env MAIL_FROM), so this is shown for reference and isn't editable.
+const SEND_FROM = "mensch.vagner@gmail.com";
 // Backend endpoint that actually delivers the mail (e.g. nodemailer / an
 // email API). Override via window.SEND_ENDPOINT before app.js loads.
 const SEND_ENDPOINT = (typeof window !== "undefined" && window.SEND_ENDPOINT) || "/api/send";
 
 function openSend() {
-  $("#sendFrom").value = localStorage.getItem("ccc-nl-from") || "";
+  $("#sendFrom").value = SEND_FROM;
   $("#sendSubject").value = state.settings.subject || "";
   if (!$("#sendTo").value) $("#sendTo").value = localStorage.getItem("ccc-nl-recipients") || "";
   $("#exportCode").value = buildEmail(state);

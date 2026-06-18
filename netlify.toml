@@ -1,0 +1,20 @@
+# Netlify config for the Newsletter Builder.
+# Static front-end is published from ./public (built below); the send + health
+# endpoints are serverless functions under netlify/functions, exposed at /api/*.
+
+[build]
+  # Copy just the static assets into the publish dir (keeps node_modules/.git out).
+  command = "mkdir -p public && cp index.html app.css app.js public/"
+  publish = "public"
+  functions = "netlify/functions"
+
+# Pretty /api/* paths → the functions (rewrite, so POST + body are preserved).
+[[redirects]]
+  from = "/api/send"
+  to = "/.netlify/functions/send"
+  status = 200
+
+[[redirects]]
+  from = "/api/health"
+  to = "/.netlify/functions/health"
+  status = 200

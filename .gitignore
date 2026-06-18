@@ -1,5 +1,7 @@
 node_modules/
 dist/
+public/
+.netlify/
 .env
 .env.local
 *.log
