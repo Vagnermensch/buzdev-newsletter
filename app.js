@@ -1063,6 +1063,67 @@ $("#btnDownload").addEventListener("click", () => {
   URL.revokeObjectURL(url); toast("Downloaded");
 });
 
+/* ---------------------------------------------------------------------
+   Shareable link — encodes the whole newsletter into the URL (no server).
+   Opening the link loads that exact newsletter; the recipient can read it
+   and keep editing (their changes then save locally as usual).
+   --------------------------------------------------------------------- */
+function bytesToB64url(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64urlToBytes(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+async function gzip(str) {
+  const cs = new CompressionStream("gzip");
+  const w = cs.writable.getWriter(); w.write(new TextEncoder().encode(str)); w.close();
+  return new Uint8Array(await new Response(cs.readable).arrayBuffer());
+}
+async function gunzip(bytes) {
+  const ds = new DecompressionStream("gzip");
+  const w = ds.writable.getWriter(); w.write(bytes); w.close();
+  return new TextDecoder().decode(await new Response(ds.readable).arrayBuffer());
+}
+async function makeShareLink() {
+  const json = JSON.stringify(state);
+  let mode = "j", payload;
+  if (typeof CompressionStream !== "undefined") {
+    try { payload = bytesToB64url(await gzip(json)); mode = "s"; } catch {}
+  }
+  if (!payload) payload = bytesToB64url(new TextEncoder().encode(json));
+  return `${location.origin}${location.pathname}#${mode}=${payload}`;
+}
+async function stateFromHash() {
+  const m = location.hash.slice(1).match(/^(s|j)=(.+)$/s);
+  if (!m) return null;
+  try {
+    const bytes = b64urlToBytes(m[2]);
+    const json = m[1] === "s" ? await gunzip(bytes) : new TextDecoder().decode(bytes);
+    const obj = JSON.parse(json);
+    if (obj && Array.isArray(obj.blocks) && obj.settings) return obj;
+  } catch {}
+  return null;
+}
+$("#btnShare").addEventListener("click", async () => {
+  try {
+    const link = await makeShareLink();
+    await navigator.clipboard.writeText(link);
+    const heavy = /"data:/.test(JSON.stringify(state));
+    toast(heavy
+      ? "Link copied — note: uploaded images make it large"
+      : "Share link copied to clipboard");
+  } catch {
+    toast("Could not create link");
+  }
+});
+
 let toastTimer;
 function toast(msg) {
   const el = $("#toast"); el.textContent = msg; el.classList.add("show");
@@ -1080,3 +1141,16 @@ renderPalette();
 renderPaletteRef();
 renderSettings();
 renderAll();
+
+// If opened via a share link, load that newsletter (takes precedence over
+// local storage), then strip the hash so the reader's own edits persist on
+// reload instead of being overwritten by the snapshot.
+(async function bootFromShareLink() {
+  const shared = await stateFromHash();
+  if (!shared) return;
+  state = shared;
+  selectedId = state.blocks[0]?.id || null;
+  renderSettings(); renderAll();
+  history.replaceState(null, "", location.pathname + location.search);
+  toast("Loaded shared newsletter");
+})();
