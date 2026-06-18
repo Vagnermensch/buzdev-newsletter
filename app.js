@@ -1112,15 +1112,30 @@ async function stateFromHash() {
   return null;
 }
 $("#btnShare").addEventListener("click", async () => {
+  const btn = $("#btnShare");
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Saving…";
   try {
-    const link = await makeShareLink();
+    // Save server-side (Netlify Blobs) → short link, even with embedded images.
+    const res = await fetch("/api/save", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(state),
+    });
+    if (!res.ok) throw new Error("save failed");
+    const { id } = await res.json();
+    const link = `${location.origin}${location.pathname}?id=${id}`;
     await navigator.clipboard.writeText(link);
-    const heavy = /"data:/.test(JSON.stringify(state));
-    toast(heavy
-      ? "Link copied — note: uploaded images make it large"
-      : "Share link copied to clipboard");
+    toast("Share link copied to clipboard");
   } catch {
-    toast("Could not create link");
+    // Fallback: encode into the URL hash (works without the server).
+    try {
+      const link = await makeShareLink();
+      await navigator.clipboard.writeText(link);
+      toast("Link copied (offline mode — server unavailable)");
+    } catch { toast("Could not create link"); }
+  } finally {
+    btn.disabled = false; btn.textContent = label;
   }
 });
 
@@ -1146,11 +1161,23 @@ renderAll();
 // local storage), then strip the hash so the reader's own edits persist on
 // reload instead of being overwritten by the snapshot.
 (async function bootFromShareLink() {
-  const shared = await stateFromHash();
+  let shared = null;
+  const id = new URLSearchParams(location.search).get("id");
+  if (id) {
+    try {
+      const res = await fetch(`/api/load?id=${encodeURIComponent(id)}`);
+      if (res.ok) {
+        const obj = await res.json();
+        if (obj && Array.isArray(obj.blocks) && obj.settings) shared = obj;
+      }
+    } catch {}
+  }
+  if (!shared) shared = await stateFromHash(); // backward-compat for old hash links
   if (!shared) return;
   state = shared;
   selectedId = state.blocks[0]?.id || null;
   renderSettings(); renderAll();
-  history.replaceState(null, "", location.pathname + location.search);
+  // Strip ?id / #hash so the reader's own edits persist on reload.
+  history.replaceState(null, "", location.pathname);
   toast("Loaded shared newsletter");
 })();
