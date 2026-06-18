@@ -253,6 +253,32 @@ const DEFS = {
     },
   },
 
+  notecard: {
+    name: "Bordered note", icon: "▌",
+    defaults: {
+      title: "A note worth flagging",
+      text: "Body copy in the same style as a paragraph. Leave a blank line to start a new paragraph.",
+      accent: "yellow",
+    },
+    fields: [
+      { key: "title",  label: "Title", type: "text" },
+      { key: "text",   label: "Body text", type: "textarea" },
+      { key: "accent", label: "Line color", type: "swatch" },
+    ],
+    render: (d, t) => {
+      const color = ACCENTS[d.accent] || t.yellow;
+      const title = d.title
+        ? `<div style="font-family:${t.serif};font-weight:500;font-size:24px;line-height:1.25;color:${t.white};margin:0 0 6px;">${esc(d.title)}</div>`
+        : "";
+      // body uses the exact paragraph style (sans 16px / 1.65 / secondary)
+      const body = richText(d.text, `margin:0 0 16px;font-family:${t.sans};font-size:16px;line-height:1.65;color:${t.secondary};`);
+      return row(
+        `<div style="border-left:3px solid ${color};padding-left:24px;">${title}${body}</div>`,
+        20, 20
+      );
+    },
+  },
+
   tags: {
     name: "Tags / Chips", icon: "⌗",
     defaults: { items: "Strategy, Pricing, Retention", type: "info", icon: "off" },
@@ -471,7 +497,7 @@ const DEFS = {
   },
 };
 
-const ORDER = ["masthead","hero","lead","heading","paragraph","stat","tags","quote","callout","callouts","cards","image","button","divider","spacer","footer"];
+const ORDER = ["masthead","hero","lead","heading","paragraph","stat","tags","quote","notecard","callout","callouts","cards","image","button","divider","spacer","footer"];
 
 /* ---------------------------------------------------------------------
    State
