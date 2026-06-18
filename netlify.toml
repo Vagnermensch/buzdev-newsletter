@@ -28,3 +28,14 @@
   from = "/api/load"
   to = "/.netlify/functions/load"
   status = 200
+
+[[redirects]]
+  from = "/api/upload-image"
+  to = "/.netlify/functions/upload-image"
+  status = 200
+
+# Splat carries the image id (e.g. /api/image/abc123.jpg) through to the function.
+[[redirects]]
+  from = "/api/image/*"
+  to = "/.netlify/functions/image/:splat"
+  status = 200

@@ -863,8 +863,25 @@ document.addEventListener("change", (e) => {
   const b = state.blocks[findIndex(el.dataset.block)];
   if (!b) return;
   const key = el.dataset.key;
-  fileToDataUrl(el.files[0], 1200, (out) => {
-    b.data[key] = out;
+  fileToDataUrl(el.files[0], 1200, async (out) => {
+    // Host the image so it survives being shared/emailed. An inline data: URI
+    // renders in the preview but gets stripped by email clients and most paste
+    // boxes, so the exported HTML would show a broken image. Upload to Netlify
+    // Blobs and reference an absolute https:// URL instead; fall back to the
+    // embedded data: URI when there's no server (local/static hosting).
+    let src = out;
+    try {
+      const res = await fetch("/api/upload-image", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dataUrl: out }),
+      });
+      if (res.ok) {
+        const { url } = await res.json();
+        if (url) src = new URL(url, location.origin).href; // absolute → portable
+      }
+    } catch {}
+    b.data[key] = src;
     renderBlocks(); renderPreview(); save();
   });
 });
