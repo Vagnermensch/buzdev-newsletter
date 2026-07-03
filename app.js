@@ -609,7 +609,14 @@ const TEMPLATES = {
   sample:  { label: "Basic sample", build: sample },
 };
 
-function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch {} }
+function save() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    // Timestamp of the last local edit, so boot can tell whether this browser's
+    // draft is newer than the site-wide published default (and should win).
+    localStorage.setItem(STORE_KEY + ":savedAt", new Date().toISOString());
+  } catch {}
+}
 function load() { try { return JSON.parse(localStorage.getItem(STORE_KEY)); } catch { return null; } }
 
 /* ---------------------------------------------------------------------
@@ -1156,6 +1163,34 @@ $("#btnShare").addEventListener("click", async () => {
   }
 });
 
+// Publish → make the current newsletter the site-wide default that EVERYONE
+// sees when they open the site (no share link needed). Overwrites the previous
+// published version, so confirm first.
+$("#btnPublish").addEventListener("click", async () => {
+  if (!confirm("Publish this as the newsletter everyone sees when they open the site?\n\nThis replaces the current published version.")) return;
+  const btn = $("#btnPublish");
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Publishing…";
+  try {
+    const res = await fetch("/api/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ settings: state.settings, blocks: state.blocks }),
+    });
+    if (!res.ok) throw new Error(`publish failed (HTTP ${res.status})`);
+    // This browser is now in sync with what was just published, so clear the
+    // "local draft is newer" marker — otherwise our own draft would keep
+    // shadowing the published version on reload.
+    localStorage.removeItem(STORE_KEY + ":savedAt");
+    toast("Published — anyone opening the site now sees this");
+  } catch (e) {
+    console.error(e);
+    toast("Couldn't publish — check your connection and try again");
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+});
+
 let toastTimer;
 function toast(msg, sticky = false) {
   const el = $("#toast"); el.textContent = msg; el.classList.add("show");
@@ -1218,13 +1253,31 @@ async function loadSharedById(id) {
     return;
   }
 
-  // No ?id — fall back to the legacy #hash link, else local/default state.
-  const shared = await stateFromHash();
-  if (shared) {
-    state = shared;
+  // No ?id — a legacy #hash link still wins if present.
+  const hashShared = await stateFromHash();
+  if (hashShared) {
+    state = hashShared;
     selectedId = state.blocks[0]?.id || null;
     history.replaceState(null, "", location.pathname);
+    renderSettings(); renderAll();
+    toast("Loaded shared newsletter");
+    return;
+  }
+
+  // Otherwise show the SITE-WIDE PUBLISHED DEFAULT (what everyone should see),
+  // unless this browser has a newer unpublished local draft — then keep the
+  // draft so the author never loses in-progress work. `state` already holds
+  // load()||template from init, so we only override it when the published
+  // version should win.
+  const { obj: published } = await loadSharedById("site-default");
+  if (published) {
+    const localSavedAt = localStorage.getItem(STORE_KEY + ":savedAt");
+    const localIsNewer = localSavedAt && published.publishedAt &&
+      Date.parse(localSavedAt) > Date.parse(published.publishedAt);
+    if (!localIsNewer) {
+      state = published;
+      selectedId = state.blocks[0]?.id || null;
+    }
   }
   renderSettings(); renderAll();
-  if (shared) toast("Loaded shared newsletter");
 })();
