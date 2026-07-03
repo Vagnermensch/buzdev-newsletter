@@ -9,7 +9,12 @@ export default async (req) => {
   if (!id || !/^[\w-]{1,64}$/.test(id)) return json(400, { error: "bad id" });
 
   const store = getStore("newsletters");
-  const data = await store.get(id, { type: "text" });
+  // The published default is mutable and read right after a Publish, so use
+  // strong consistency — Blobs' default eventual reads can return the previous
+  // value for several seconds, which looked like "my Publish didn't work".
+  // Share links are immutable, so eventual (faster) reads are fine for them.
+  const consistency = id === "site-default" ? "strong" : "eventual";
+  const data = await store.get(id, { type: "text", consistency });
   if (data == null) return json(404, { error: "not found" });
 
   // Share links (random ids) are immutable → safe to cache. The published
