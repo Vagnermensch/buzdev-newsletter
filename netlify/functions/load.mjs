@@ -12,8 +12,12 @@ export default async (req) => {
   const data = await store.get(id, { type: "text" });
   if (data == null) return json(404, { error: "not found" });
 
+  // Share links (random ids) are immutable → safe to cache. The published
+  // default is mutable (Publish overwrites it), so it must never be edge-cached
+  // or readers would keep seeing the old version for up to a minute.
+  const cacheControl = id === "site-default" ? "no-store" : "public, max-age=60";
   return new Response(data, {
     status: 200,
-    headers: { "content-type": "application/json", "cache-control": "public, max-age=60" },
+    headers: { "content-type": "application/json", "cache-control": cacheControl },
   });
 };
