@@ -1157,9 +1157,10 @@ $("#btnShare").addEventListener("click", async () => {
 });
 
 let toastTimer;
-function toast(msg) {
+function toast(msg, sticky = false) {
   const el = $("#toast"); el.textContent = msg; el.classList.add("show");
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+  clearTimeout(toastTimer);
+  if (!sticky) toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
 }
 
 document.addEventListener("keydown", (e) => {
@@ -1171,30 +1172,59 @@ document.addEventListener("keydown", (e) => {
    --------------------------------------------------------------------- */
 renderPalette();
 renderPaletteRef();
-renderSettings();
-renderAll();
 
-// If opened via a share link, load that newsletter (takes precedence over
-// local storage), then strip the hash so the reader's own edits persist on
-// reload instead of being overwritten by the snapshot.
-(async function bootFromShareLink() {
-  let shared = null;
-  const id = new URLSearchParams(location.search).get("id");
-  if (id) {
+// Fetch a shared newsletter by id. Netlify Functions + Blobs can cold-start,
+// so a single slow/failed request must not silently drop the reader onto the
+// default template — retry a few times with backoff before giving up.
+async function loadSharedById(id) {
+  let lastErr;
+  for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const res = await fetch(`/api/load?id=${encodeURIComponent(id)}`);
+      const res = await fetch(`/api/load?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (res.status === 404) return { notFound: true };
       if (res.ok) {
         const obj = await res.json();
-        if (obj && Array.isArray(obj.blocks) && obj.settings) shared = obj;
+        if (obj && Array.isArray(obj.blocks) && obj.settings) return { obj };
+        throw new Error("malformed newsletter payload");
       }
-    } catch {}
+      lastErr = new Error(`HTTP ${res.status}`);
+    } catch (e) { lastErr = e; }
+    await new Promise(r => setTimeout(r, 400 * (attempt + 1))); // 0.4s → 0.8s → 1.2s
   }
-  if (!shared) shared = await stateFromHash(); // backward-compat for old hash links
-  if (!shared) return;
-  state = shared;
-  selectedId = state.blocks[0]?.id || null;
+  return { error: lastErr };
+}
+
+// If opened via a share link, load that newsletter BEFORE rendering so the
+// reader never sees the default template flash in as if their saved content
+// had failed. On success we strip ?id/#hash so the reader's own edits persist
+// on reload; on failure we keep ?id so a reload retries instead of losing it.
+(async function bootFromShareLink() {
+  const id = new URLSearchParams(location.search).get("id");
+  if (id) {
+    toast("Loading shared newsletter…", true);
+    const { obj, notFound, error } = await loadSharedById(id);
+    if (obj) {
+      state = obj;
+      selectedId = state.blocks[0]?.id || null;
+      renderSettings(); renderAll();
+      history.replaceState(null, "", location.pathname);
+      toast("Loaded shared newsletter");
+      return;
+    }
+    // Load failed — render whatever we have, but say why (and keep ?id).
+    renderSettings(); renderAll();
+    if (notFound) toast("This shared link no longer exists");
+    else { console.error("Failed to load shared newsletter:", error); toast("Couldn't load — check your connection and reload"); }
+    return;
+  }
+
+  // No ?id — fall back to the legacy #hash link, else local/default state.
+  const shared = await stateFromHash();
+  if (shared) {
+    state = shared;
+    selectedId = state.blocks[0]?.id || null;
+    history.replaceState(null, "", location.pathname);
+  }
   renderSettings(); renderAll();
-  // Strip ?id / #hash so the reader's own edits persist on reload.
-  history.replaceState(null, "", location.pathname);
-  toast("Loaded shared newsletter");
+  if (shared) toast("Loaded shared newsletter");
 })();
