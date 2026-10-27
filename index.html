@@ -24,6 +24,8 @@
       <div class="spacer"></div>
       <button class="btn btn-outline btn-sm" id="btnReset">Reset</button>
       <select class="select select-sm" id="templatePicker" title="Load a template"></select>
+      <button class="btn btn-outline btn-sm" id="btnOpen" title="Open a newsletter saved by anyone">Open</button>
+      <button class="btn btn-outline btn-sm" id="btnSave" title="Save to the shared library so others can open it from any browser">Save</button>
       <button class="btn btn-outline btn-sm" id="btnShare" title="Save and copy a link that loads this exact newsletter">Save link</button>
       <button class="btn btn-outline btn-sm" id="btnPublish" title="Publish this as the newsletter everyone sees when they open the site">Publish</button>
       <button class="btn btn-primary" id="btnSend">Send newsletter</button>
@@ -113,6 +115,18 @@
         <button class="btn btn-outline" id="btnDownload">Download .html</button>
         <button class="btn btn-primary" id="btnSendNow">Send</button>
       </footer>
+    </div>
+  </div>
+
+  <!-- Library dialog -->
+  <div class="dialog-backdrop" id="libraryDialog">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="libraryTitle">
+      <header>
+        <h2 id="libraryTitle">Saved newsletters</h2>
+        <div class="spacer"></div>
+        <button class="btn btn-ghost btn-sm" id="btnCloseLibrary">Close</button>
+      </header>
+      <div class="content" id="libraryList"></div>
     </div>
   </div>
 

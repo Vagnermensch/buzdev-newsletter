@@ -1001,7 +1001,7 @@ $("#viewport").addEventListener("click", (e) => {
 $("#btnReset").addEventListener("click", () => {
   if (!confirm("Clear all blocks and settings?")) return;
   state = { settings: { subject: "", preheader: "" }, blocks: [] };
-  selectedId = null; renderSettings(); renderAll(); toast("Cleared");
+  setLibId(null); selectedId = null; renderSettings(); renderAll(); toast("Cleared");
 });
 
 // ---- Sending ---------------------------------------------------------
@@ -1191,6 +1191,101 @@ $("#btnPublish").addEventListener("click", async () => {
   }
 });
 
+/* ---------------------------------------------------------------------
+   Shared library — named newsletters stored server-side (Netlify Blobs),
+   so a newsletter saved in one browser can be opened from any other.
+   --------------------------------------------------------------------- */
+const LIB_KEY = "ccc-nl-library-id";
+let libId = localStorage.getItem(LIB_KEY) || null; // id of the library entry being edited
+
+function setLibId(id) {
+  libId = id;
+  try { id ? localStorage.setItem(LIB_KEY, id) : localStorage.removeItem(LIB_KEY); } catch {}
+}
+
+async function saveToLibrary(asNew) {
+  let name = state.settings.libraryName || "";
+  if (asNew || !libId || !name) {
+    name = prompt("Name this newsletter:", name || state.settings.subject || "") ;
+    if (name == null) return;
+    name = name.trim();
+    if (!name) return toast("Give it a name to save");
+  }
+  const btn = $("#btnSave");
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    state.settings.libraryName = name;
+    const res = await fetch("/api/library", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: asNew ? undefined : libId || undefined, name, newsletter: state }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const saved = await res.json();
+    setLibId(saved.id);
+    save();
+    toast(`Saved “${saved.name}” — anyone can open it from Open`);
+  } catch (e) {
+    console.error(e);
+    toast("Couldn't save — check your connection and try again");
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+$("#btnSave").addEventListener("click", (e) => saveToLibrary(e.shiftKey));
+
+async function renderLibrary() {
+  const box = $("#libraryList");
+  box.innerHTML = '<p style="color:var(--muted-foreground);font-size:13px">Loading…</p>';
+  try {
+    const res = await fetch("/api/library", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const items = await res.json();
+    if (!items.length) { box.innerHTML = '<p style="color:var(--muted-foreground);font-size:13px">Nothing saved yet. Use Save to add the first one.</p>'; return; }
+    box.innerHTML = items.map((it) => `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.name)}${it.id === libId ? " (current)" : ""}</div>
+          <div style="color:var(--muted-foreground);font-size:12px">${it.savedAt ? new Date(it.savedAt).toLocaleString() : ""}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" data-open="${esc(it.id)}">Open</button>
+        <button class="btn btn-ghost btn-sm" data-del="${esc(it.id)}" data-name="${esc(it.name)}">Delete</button>
+      </div>`).join("");
+  } catch (e) {
+    console.error(e);
+    box.innerHTML = '<p style="color:var(--muted-foreground);font-size:13px">Couldn\'t load the list — check your connection.</p>';
+  }
+}
+$("#btnOpen").addEventListener("click", () => { $("#libraryDialog").classList.add("open"); renderLibrary(); });
+$("#btnCloseLibrary").addEventListener("click", () => $("#libraryDialog").classList.remove("open"));
+$("#libraryList").addEventListener("click", async (e) => {
+  const open = e.target.closest("[data-open]");
+  const del = e.target.closest("[data-del]");
+  if (open) {
+    try {
+      const res = await fetch(`/api/library?id=${encodeURIComponent(open.dataset.open)}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const obj = await res.json();
+      if (!obj || !Array.isArray(obj.blocks) || !obj.settings) throw new Error("malformed");
+      state = obj;
+      selectedId = state.blocks[0]?.id || null;
+      setLibId(open.dataset.open);
+      save(); renderSettings(); renderAll();
+      $("#libraryDialog").classList.remove("open");
+      toast(`Opened “${state.settings.libraryName || "newsletter"}”`);
+    } catch (err) { console.error(err); toast("Couldn't open that newsletter"); }
+  } else if (del) {
+    if (!confirm(`Delete “${del.dataset.name}” for everyone?`)) return;
+    try {
+      const res = await fetch(`/api/library?id=${encodeURIComponent(del.dataset.del)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (del.dataset.del === libId) setLibId(null);
+      renderLibrary();
+    } catch (err) { console.error(err); toast("Couldn't delete"); }
+  }
+});
+
 let toastTimer;
 function toast(msg, sticky = false) {
   const el = $("#toast"); el.textContent = msg; el.classList.add("show");
@@ -1199,7 +1294,7 @@ function toast(msg, sticky = false) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") $("#exportDialog").classList.remove("open");
+  if (e.key === "Escape") { $("#exportDialog").classList.remove("open"); $("#libraryDialog").classList.remove("open"); }
 });
 
 /* ---------------------------------------------------------------------
