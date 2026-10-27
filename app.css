@@ -462,3 +462,7 @@ label.lbl {
 #ddBtn .dd-text { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ddBtn .dd-caret { flex: none; }
 .dd-menu { min-width: 280px; }
+#ddBtn .dd-prefix { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-foreground); margin-right: 6px; }
+#ddBtn .dd-name { overflow: hidden; text-overflow: ellipsis; }
+#ddBtn .dd-text { display: flex; align-items: baseline; }
+#ddBtn .dd-prefix:only-child { margin-right: 0; }
