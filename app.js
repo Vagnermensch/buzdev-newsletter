@@ -1150,34 +1150,6 @@ async function stateFromHash() {
   } catch {}
   return null;
 }
-$("#btnShare").addEventListener("click", async () => {
-  const btn = $("#btnShare");
-  const label = btn.textContent;
-  btn.disabled = true; btn.textContent = "Saving…";
-  try {
-    // Save server-side (Netlify Blobs) → short link, even with embedded images.
-    const res = await fetch("/api/save", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(state),
-    });
-    if (!res.ok) throw new Error("save failed");
-    const { id } = await res.json();
-    const link = `${location.origin}${location.pathname}?id=${id}`;
-    await navigator.clipboard.writeText(link);
-    toast("Saved — link copied to clipboard");
-  } catch {
-    // Fallback: encode into the URL hash (works without the server).
-    try {
-      const link = await makeShareLink();
-      await navigator.clipboard.writeText(link);
-      toast("Link copied (offline mode — server unavailable)");
-    } catch { toast("Could not create link"); }
-  } finally {
-    btn.disabled = false; btn.textContent = label;
-  }
-});
-
 // Publish → make the current newsletter the site-wide default that EVERYONE
 // sees when they open the site (no share link needed). Overwrites the previous
 // published version, so confirm first.
