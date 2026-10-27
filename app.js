@@ -1059,6 +1059,32 @@ $("#viewport").addEventListener("click", (e) => {
     }
   });
 })();
+// Upload template — load a newsletter from a .json file as a new (unsaved) document.
+$("#btnUpload").addEventListener("click", () => $("#uploadFile").click());
+$("#uploadFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = ""; // allow re-selecting the same file
+  if (!file) return;
+  try {
+    if (file.size > 4_000_000) throw new Error("too large");
+    const obj = JSON.parse(await file.text());
+    if (!obj || !Array.isArray(obj.blocks) || typeof obj.settings !== "object" || !obj.settings) throw new Error("not a newsletter");
+    for (const bl of obj.blocks) {
+      if (!bl || typeof bl.type !== "string" || !DEFS[bl.type]) throw new Error(`unknown block type: ${bl && bl.type}`);
+      bl.id = bl.id || uid();
+      bl.data = { ...structuredClone(DEFS[bl.type].defaults), ...(bl.data || {}) };
+    }
+    state = { settings: obj.settings, blocks: obj.blocks };
+    delete state.settings.libraryName;
+    setLibId(null); // new document — Save will ask for a name
+    selectedId = state.blocks[0]?.id || null;
+    save(); renderSettings(); renderAll();
+    toast(`Loaded “${file.name}” — use Save to keep it`);
+  } catch (err) {
+    console.error(err);
+    toast("Couldn't load that file — it must be a newsletter .json");
+  }
+});
 $("#btnReset").addEventListener("click", () => {
   if (!confirm("Clear all blocks and settings?")) return;
   state = { settings: { subject: "", preheader: "" }, blocks: [] };
