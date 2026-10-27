@@ -1150,34 +1150,6 @@ async function stateFromHash() {
   } catch {}
   return null;
 }
-// Publish → make the current newsletter the site-wide default that EVERYONE
-// sees when they open the site (no share link needed). Overwrites the previous
-// published version, so confirm first.
-$("#btnPublish").addEventListener("click", async () => {
-  if (!confirm("Publish this as the newsletter everyone sees when they open the site?\n\nThis replaces the current published version.")) return;
-  const btn = $("#btnPublish");
-  const label = btn.textContent;
-  btn.disabled = true; btn.textContent = "Publishing…";
-  try {
-    const res = await fetch("/api/publish", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ settings: state.settings, blocks: state.blocks }),
-    });
-    if (!res.ok) throw new Error(`publish failed (HTTP ${res.status})`);
-    // This browser is now in sync with what was just published, so clear the
-    // "local draft is newer" marker — otherwise our own draft would keep
-    // shadowing the published version on reload.
-    localStorage.removeItem(STORE_KEY + ":savedAt");
-    toast("Published — anyone opening the site now sees this");
-  } catch (e) {
-    console.error(e);
-    toast("Couldn't publish — check your connection and try again");
-  } finally {
-    btn.disabled = false; btn.textContent = label;
-  }
-});
-
 /* ---------------------------------------------------------------------
    Shared library — named newsletters stored server-side (Netlify Blobs),
    so a newsletter saved in one browser can be opened from any other.
@@ -1188,8 +1160,6 @@ let libId = localStorage.getItem(LIB_KEY) || null; // id of the library entry be
 function setLibId(id) {
   libId = id;
   try { id ? localStorage.setItem(LIB_KEY, id) : localStorage.removeItem(LIB_KEY); } catch {}
-  const del = document.getElementById("btnDelete");
-  if (del) del.hidden = !id;
 }
 // Delete a saved newsletter for everyone; if it's the one being edited, keep the
 // content in the editor but detach it so Save creates a fresh entry.
@@ -1204,11 +1174,6 @@ async function deleteFromLibrary(id, name) {
     return true;
   } catch (err) { console.error(err); toast("Couldn't delete"); return false; }
 }
-setLibId(libId);
-$("#btnDelete").addEventListener("click", () => {
-  if (libId) deleteFromLibrary(libId, state.settings.libraryName || "this newsletter");
-});
-
 async function saveToLibrary(asNew) {
   let name = state.settings.libraryName || "";
   if (asNew || !libId || !name) {
