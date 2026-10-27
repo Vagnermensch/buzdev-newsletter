@@ -455,3 +455,5 @@ label.lbl {
 .dd-act { padding: 6px 8px; color: var(--muted-foreground); }
 .dd-item:hover, .dd-act:hover { background: var(--muted); color: inherit; }
 .dd-item.current { font-weight: 600; }
+.dd-foot { margin-top: var(--sp-1); padding: var(--sp-2) var(--sp-1) var(--sp-1); border-top: 1px solid var(--border); }
+.dd-upload { width: 100%; justify-content: center; }

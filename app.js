@@ -1000,8 +1000,8 @@ $("#viewport").addEventListener("click", (e) => {
           <button class="dd-act" data-del="${esc(it.id)}" data-name="${esc(it.name)}" title="Delete">✕</button>
         </div>`).join("")
       : `<div class="dd-hint">Nothing saved yet — use Save.</div>`;
-    const upload = `<div class="dd-row"><button class="dd-item" data-upload>⬆ Upload template…</button></div>`;
-    menu.innerHTML = `<div class="dd-label">Templates</div>${built}<div class="dd-label">Saved</div>${mine}<div class="dd-label">File</div>${upload}`;
+    const upload = `<button class="btn btn-outline btn-sm dd-upload" data-upload>⬆ Upload template</button>`;
+    menu.innerHTML = `<div class="dd-label">Templates</div>${built}<div class="dd-label">Saved</div>${mine}<div class="dd-foot">${upload}</div>`;
   }
   window.refreshTemplatePicker = async function () {
     try {
