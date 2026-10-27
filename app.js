@@ -983,34 +983,80 @@ $("#viewport").addEventListener("click", (e) => {
   $("#previewScroll").dataset.w = btn.dataset.w;
 });
 
-// topbar actions — template picker
+// topbar actions — template dropdown: built-in templates + shared saved ones.
+// Saved rows carry rename/delete actions, so everything lives inside the menu.
 (function initTemplatePicker() {
-  const sel = $("#templatePicker");
-  const builtins = Object.entries(TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join("");
-  // Saved (shared library) entries are appended as a second group; refreshed after save/delete.
+  const btn = $("#ddBtn"), menu = $("#ddMenu"), root = $("#templatePicker");
+  let saved = [];
+  const setOpen = (open) => { menu.hidden = !open; btn.setAttribute("aria-expanded", String(open)); };
+
+  function render() {
+    const built = Object.entries(TEMPLATES).map(([k, t]) =>
+      `<div class="dd-row"><button class="dd-item" data-tpl="${k}">${esc(t.label)}</button></div>`).join("");
+    const mine = saved.length
+      ? saved.map((it) => `<div class="dd-row">
+          <button class="dd-item${it.id === libId ? " current" : ""}" data-lib="${esc(it.id)}" title="Open">${esc(it.name)}</button>
+          <button class="dd-act" data-ren="${esc(it.id)}" data-name="${esc(it.name)}" title="Rename">✎</button>
+          <button class="dd-act" data-del="${esc(it.id)}" data-name="${esc(it.name)}" title="Delete">✕</button>
+        </div>`).join("")
+      : `<div class="dd-hint">Nothing saved yet — use Save.</div>`;
+    menu.innerHTML = `<div class="dd-label">Templates</div>${built}<div class="dd-label">Saved</div>${mine}`;
+  }
   window.refreshTemplatePicker = async function () {
-    let saved = "";
     try {
       const res = await fetch("/api/library", { cache: "no-store" });
-      if (res.ok) {
-        const items = await res.json();
-        if (items.length) saved = `<optgroup label="Saved">` + items.map((it) => `<option value="lib:${esc(it.id)}">${esc(it.name)}</option>`).join("") + `</optgroup>`;
-      }
+      if (res.ok) saved = await res.json();
     } catch {}
-    sel.innerHTML = `<option value="" disabled selected>Load template…</option>` + builtins + saved;
+    render();
   };
+  render();
   window.refreshTemplatePicker();
-  sel.addEventListener("change", () => {
-    const v = sel.value;
-    sel.value = "";
-    if (v.startsWith("lib:")) return openFromLibrary(v.slice(4));
-    const tpl = TEMPLATES[v];
-    if (!tpl) return;
-    state = tpl.build();
-    setLibId(null); // a built-in template is a new document — don't let Save overwrite the saved one
-    selectedId = state.blocks[0]?.id || null;
-    renderSettings(); renderAll();
-    toast(`${tpl.label} loaded`);
+
+  btn.addEventListener("click", () => {
+    const open = menu.hidden;
+    setOpen(open);
+    if (open) window.refreshTemplatePicker(); // pick up changes made from other browsers
+  });
+  document.addEventListener("click", (e) => { if (!root.contains(e.target)) setOpen(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
+
+  menu.addEventListener("click", async (e) => {
+    const tplBtn = e.target.closest("[data-tpl]");
+    const libBtn = e.target.closest("[data-lib]");
+    const ren = e.target.closest("[data-ren]");
+    const del = e.target.closest("[data-del]");
+    if (tplBtn) {
+      const tpl = TEMPLATES[tplBtn.dataset.tpl];
+      setOpen(false);
+      state = tpl.build();
+      setLibId(null); // a built-in template is a new document — don't let Save overwrite a saved one
+      selectedId = state.blocks[0]?.id || null;
+      renderSettings(); renderAll();
+      toast(`${tpl.label} loaded`);
+    } else if (libBtn) {
+      setOpen(false);
+      await openFromLibrary(libBtn.dataset.lib);
+    } else if (ren) {
+      const id = ren.dataset.ren;
+      const name = (prompt("New name:", ren.dataset.name) || "").trim();
+      if (!name || name === ren.dataset.name) return;
+      try {
+        const got = await fetch(`/api/library?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (!got.ok) throw new Error(`HTTP ${got.status}`);
+        const nl = await got.json();
+        nl.settings.libraryName = name;
+        const res = await fetch("/api/library", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, name, newsletter: nl }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (id === libId) { state.settings.libraryName = name; save(); }
+        window.refreshTemplatePicker();
+      } catch (err) { console.error(err); toast("Couldn't rename"); }
+    } else if (del) {
+      await deleteFromLibrary(del.dataset.del, del.dataset.name);
+    }
   });
 })();
 $("#btnReset").addEventListener("click", () => {
@@ -1207,28 +1253,6 @@ async function saveToLibrary(asNew) {
 }
 $("#btnSave").addEventListener("click", (e) => saveToLibrary(e.shiftKey));
 
-async function renderLibrary() {
-  const box = $("#libraryList");
-  box.innerHTML = '<p style="color:var(--muted-foreground);font-size:13px">Loading…</p>';
-  try {
-    const res = await fetch("/api/library", { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const items = await res.json();
-    if (!items.length) { box.innerHTML = '<p style="color:var(--muted-foreground);font-size:13px">Nothing saved yet. Use Save to add the first one.</p>'; return; }
-    box.innerHTML = items.map((it) => `
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.name)}${it.id === libId ? " (current)" : ""}</div>
-          <div style="color:var(--muted-foreground);font-size:12px">${it.savedAt ? new Date(it.savedAt).toLocaleString() : ""}</div>
-        </div>
-        <button class="btn btn-outline btn-sm" data-ren="${esc(it.id)}" data-name="${esc(it.name)}">Rename</button>
-        <button class="btn btn-ghost btn-sm" data-del="${esc(it.id)}" data-name="${esc(it.name)}">Delete</button>
-      </div>`).join("");
-  } catch (e) {
-    console.error(e);
-    box.innerHTML = '<p style="color:var(--muted-foreground);font-size:13px">Couldn\'t load the list — check your connection.</p>';
-  }
-}
 async function openFromLibrary(id) {
   try {
     const res = await fetch(`/api/library?id=${encodeURIComponent(id)}`, { cache: "no-store" });
@@ -1243,34 +1267,6 @@ async function openFromLibrary(id) {
     return true;
   } catch (err) { console.error(err); toast("Couldn't open that newsletter"); return false; }
 }
-$("#btnOpen").addEventListener("click", () => { $("#libraryDialog").classList.add("open"); renderLibrary(); });
-$("#btnCloseLibrary").addEventListener("click", () => $("#libraryDialog").classList.remove("open"));
-$("#libraryList").addEventListener("click", async (e) => {
-  const ren = e.target.closest("[data-ren]");
-  const del = e.target.closest("[data-del]");
-  if (ren) {
-    const name = (prompt("New name:", ren.dataset.name) || "").trim();
-    if (!name || name === ren.dataset.name) return;
-    try {
-      const id = ren.dataset.ren;
-      const got = await fetch(`/api/library?id=${encodeURIComponent(id)}`, { cache: "no-store" });
-      if (!got.ok) throw new Error(`HTTP ${got.status}`);
-      const nl = await got.json();
-      nl.settings.libraryName = name;
-      const res = await fetch("/api/library", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, name, newsletter: nl }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      if (id === libId) { state.settings.libraryName = name; save(); }
-      renderLibrary(); window.refreshTemplatePicker?.();
-    } catch (err) { console.error(err); toast("Couldn't rename"); }
-  } else if (del) {
-    if (await deleteFromLibrary(del.dataset.del, del.dataset.name)) renderLibrary();
-  }
-});
-
 let toastTimer;
 function toast(msg, sticky = false) {
   const el = $("#toast"); el.textContent = msg; el.classList.add("show");
@@ -1279,7 +1275,7 @@ function toast(msg, sticky = false) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { $("#exportDialog").classList.remove("open"); $("#libraryDialog").classList.remove("open"); }
+  if (e.key === "Escape") $("#exportDialog").classList.remove("open");
 });
 
 /* ---------------------------------------------------------------------
