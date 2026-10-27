@@ -1216,7 +1216,26 @@ let libId = localStorage.getItem(LIB_KEY) || null; // id of the library entry be
 function setLibId(id) {
   libId = id;
   try { id ? localStorage.setItem(LIB_KEY, id) : localStorage.removeItem(LIB_KEY); } catch {}
+  const del = document.getElementById("btnDelete");
+  if (del) del.hidden = !id;
 }
+// Delete a saved newsletter for everyone; if it's the one being edited, keep the
+// content in the editor but detach it so Save creates a fresh entry.
+async function deleteFromLibrary(id, name) {
+  if (!confirm(`Delete “${name}” for everyone? This can't be undone.`)) return false;
+  try {
+    const res = await fetch(`/api/library?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (id === libId) { setLibId(null); delete state.settings.libraryName; save(); }
+    window.refreshTemplatePicker?.();
+    toast(`Deleted “${name}”`);
+    return true;
+  } catch (err) { console.error(err); toast("Couldn't delete"); return false; }
+}
+setLibId(libId);
+$("#btnDelete").addEventListener("click", () => {
+  if (libId) deleteFromLibrary(libId, state.settings.libraryName || "this newsletter");
+});
 
 async function saveToLibrary(asNew) {
   let name = state.settings.libraryName || "";
@@ -1295,13 +1314,7 @@ $("#libraryList").addEventListener("click", async (e) => {
   if (open) {
     if (await openFromLibrary(open.dataset.open)) $("#libraryDialog").classList.remove("open");
   } else if (del) {
-    if (!confirm(`Delete “${del.dataset.name}” for everyone?`)) return;
-    try {
-      const res = await fetch(`/api/library?id=${encodeURIComponent(del.dataset.del)}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      if (del.dataset.del === libId) setLibId(null);
-      renderLibrary(); window.refreshTemplatePicker?.();
-    } catch (err) { console.error(err); toast("Couldn't delete"); }
+    if (await deleteFromLibrary(del.dataset.del, del.dataset.name)) renderLibrary();
   }
 });
 
