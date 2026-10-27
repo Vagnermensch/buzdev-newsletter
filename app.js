@@ -1113,9 +1113,9 @@ $("#uploadFile").addEventListener("change", async (e) => {
   }
 });
 $("#btnReset").addEventListener("click", () => {
-  if (!confirm("Clear all blocks and settings?")) return;
+  if (!confirm("Start a new blank newsletter?\n\nUnsaved changes will be lost. Saved templates are not affected.")) return;
   state = blankNewsletter();
-  setLibId(null); selectedId = null; renderSettings(); renderAll(); toast("Cleared");
+  setLibId(null); selectedId = null; renderSettings(); renderAll(); toast("New blank newsletter");
 });
 
 // ---- Sending ---------------------------------------------------------
