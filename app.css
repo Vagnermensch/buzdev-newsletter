@@ -457,4 +457,8 @@ label.lbl {
 .dd-item.current { font-weight: 600; }
 .dd-foot { margin-top: var(--sp-1); padding: var(--sp-2) var(--sp-1) var(--sp-1); border-top: 1px solid var(--border); }
 .dd-upload { width: 100%; justify-content: center; }
-#ddBtn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Fixed width so the toolbar doesn't shift when the label changes */
+#ddBtn { width: 280px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#ddBtn .dd-text { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ddBtn .dd-caret { flex: none; }
+.dd-menu { min-width: 280px; }

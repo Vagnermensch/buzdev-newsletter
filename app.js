@@ -995,9 +995,10 @@ let libId = localStorage.getItem(LIB_KEY) || null; // id of the library entry be
   let saved = [];
   // Button text: "Templates" by default, else the name of the selected template.
   window.updateDdLabel = () => {
-    const name = (libId && state.settings.libraryName) || currentBuiltin || "Templates";
-    btn.textContent = `${name} ▾`;
-    btn.title = name;
+    const name = (libId && state.settings.libraryName) || currentBuiltin;
+    const text = name ? `TEMPLATE: ${name}` : "Templates";
+    btn.querySelector(".dd-text").textContent = text;
+    btn.title = text;
   };
   const setOpen = (open) => { menu.hidden = !open; btn.setAttribute("aria-expanded", String(open)); };
 
