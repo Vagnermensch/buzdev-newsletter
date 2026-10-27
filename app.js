@@ -984,6 +984,10 @@ $("#viewport").addEventListener("click", (e) => {
   $("#previewScroll").dataset.w = btn.dataset.w;
 });
 
+const LIB_KEY = "ccc-nl-library-id";
+let currentBuiltin = null; // label of the built-in template last loaded, if any
+let libId = localStorage.getItem(LIB_KEY) || null; // id of the library entry being edited
+
 // topbar actions — template dropdown: built-in templates + shared saved ones.
 // Saved rows carry rename/delete actions, so everything lives inside the menu.
 (function initTemplatePicker() {
@@ -1236,10 +1240,6 @@ async function stateFromHash() {
    Shared library — named newsletters stored server-side (Netlify Blobs),
    so a newsletter saved in one browser can be opened from any other.
    --------------------------------------------------------------------- */
-const LIB_KEY = "ccc-nl-library-id";
-let currentBuiltin = null; // label of the built-in template last loaded, if any
-let libId = localStorage.getItem(LIB_KEY) || null; // id of the library entry being edited
-
 function setLibId(id) {
   libId = id;
   currentBuiltin = null; // any open/save/reset/upload ends "a built-in is selected"
