@@ -503,7 +503,9 @@ const ORDER = ["masthead","hero","lead","heading","paragraph","stat","tags","quo
    State
    --------------------------------------------------------------------- */
 const STORE_KEY = "ccc-newsletter-builder-v1";
-let state = load() || templateSpringIssue();
+// Blank starting page: no blocks, no template selected.
+const blankNewsletter = () => ({ settings: { subject: "", preheader: "" }, blocks: [] });
+let state = load() || blankNewsletter();
 let selectedId = state.blocks[0]?.id || null;
 
 function newBlock(type) {
@@ -1112,7 +1114,7 @@ $("#uploadFile").addEventListener("change", async (e) => {
 });
 $("#btnReset").addEventListener("click", () => {
   if (!confirm("Clear all blocks and settings?")) return;
-  state = { settings: { subject: "", preheader: "" }, blocks: [] };
+  state = blankNewsletter();
   setLibId(null); selectedId = null; renderSettings(); renderAll(); toast("Cleared");
 });
 
@@ -1390,20 +1392,6 @@ async function loadSharedById(id) {
     return;
   }
 
-  // Otherwise show the SITE-WIDE PUBLISHED DEFAULT (what everyone should see),
-  // unless this browser has a newer unpublished local draft — then keep the
-  // draft so the author never loses in-progress work. `state` already holds
-  // load()||template from init, so we only override it when the published
-  // version should win.
-  const { obj: published } = await loadSharedById("site-default");
-  if (published) {
-    const localSavedAt = localStorage.getItem(STORE_KEY + ":savedAt");
-    const localIsNewer = localSavedAt && published.publishedAt &&
-      Date.parse(localSavedAt) > Date.parse(published.publishedAt);
-    if (!localIsNewer) {
-      state = published;
-      selectedId = state.blocks[0]?.id || null;
-    }
-  }
+  // Otherwise keep what init chose: this browser's own draft, or the blank page.
   renderSettings(); renderAll();
 })();
