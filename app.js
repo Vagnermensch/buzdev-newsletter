@@ -811,6 +811,7 @@ function renderAll() {
   renderBlocks();
   renderPreview();
   save();
+  window.updateDdLabel?.();
 }
 
 /* ---------------------------------------------------------------------
@@ -988,6 +989,12 @@ $("#viewport").addEventListener("click", (e) => {
 (function initTemplatePicker() {
   const btn = $("#ddBtn"), menu = $("#ddMenu"), root = $("#templatePicker");
   let saved = [];
+  // Button text: "Templates" by default, else the name of the selected template.
+  window.updateDdLabel = () => {
+    const name = (libId && state.settings.libraryName) || currentBuiltin || "Templates";
+    btn.textContent = `${name} ▾`;
+    btn.title = name;
+  };
   const setOpen = (open) => { menu.hidden = !open; btn.setAttribute("aria-expanded", String(open)); };
 
   function render() {
@@ -1012,6 +1019,7 @@ $("#viewport").addEventListener("click", (e) => {
   };
   render();
   window.refreshTemplatePicker();
+  window.updateDdLabel();
 
   btn.addEventListener("click", () => {
     const open = menu.hidden;
@@ -1032,6 +1040,7 @@ $("#viewport").addEventListener("click", (e) => {
       setOpen(false);
       state = tpl.build();
       setLibId(null); // a built-in template is a new document — don't let Save overwrite a saved one
+      currentBuiltin = tpl.label;
       selectedId = state.blocks[0]?.id || null;
       renderSettings(); renderAll();
       toast(`${tpl.label} loaded`);
@@ -1053,7 +1062,7 @@ $("#viewport").addEventListener("click", (e) => {
           body: JSON.stringify({ id, name, newsletter: nl }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        if (id === libId) { state.settings.libraryName = name; save(); }
+        if (id === libId) { state.settings.libraryName = name; save(); window.updateDdLabel(); }
         window.refreshTemplatePicker();
       } catch (err) { console.error(err); toast("Couldn't rename"); }
     } else if (del) {
@@ -1228,10 +1237,13 @@ async function stateFromHash() {
    so a newsletter saved in one browser can be opened from any other.
    --------------------------------------------------------------------- */
 const LIB_KEY = "ccc-nl-library-id";
+let currentBuiltin = null; // label of the built-in template last loaded, if any
 let libId = localStorage.getItem(LIB_KEY) || null; // id of the library entry being edited
 
 function setLibId(id) {
   libId = id;
+  currentBuiltin = null; // any open/save/reset/upload ends "a built-in is selected"
+  window.updateDdLabel?.();
   try { id ? localStorage.setItem(LIB_KEY, id) : localStorage.removeItem(LIB_KEY); } catch {}
 }
 // Delete a saved newsletter for everyone; if it's the one being edited, keep the
