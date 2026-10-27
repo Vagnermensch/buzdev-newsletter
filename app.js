@@ -1221,7 +1221,7 @@ async function renderLibrary() {
           <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.name)}${it.id === libId ? " (current)" : ""}</div>
           <div style="color:var(--muted-foreground);font-size:12px">${it.savedAt ? new Date(it.savedAt).toLocaleString() : ""}</div>
         </div>
-        <button class="btn btn-outline btn-sm" data-open="${esc(it.id)}">Open</button>
+        <button class="btn btn-outline btn-sm" data-ren="${esc(it.id)}" data-name="${esc(it.name)}">Rename</button>
         <button class="btn btn-ghost btn-sm" data-del="${esc(it.id)}" data-name="${esc(it.name)}">Delete</button>
       </div>`).join("");
   } catch (e) {
@@ -1246,10 +1246,26 @@ async function openFromLibrary(id) {
 $("#btnOpen").addEventListener("click", () => { $("#libraryDialog").classList.add("open"); renderLibrary(); });
 $("#btnCloseLibrary").addEventListener("click", () => $("#libraryDialog").classList.remove("open"));
 $("#libraryList").addEventListener("click", async (e) => {
-  const open = e.target.closest("[data-open]");
+  const ren = e.target.closest("[data-ren]");
   const del = e.target.closest("[data-del]");
-  if (open) {
-    if (await openFromLibrary(open.dataset.open)) $("#libraryDialog").classList.remove("open");
+  if (ren) {
+    const name = (prompt("New name:", ren.dataset.name) || "").trim();
+    if (!name || name === ren.dataset.name) return;
+    try {
+      const id = ren.dataset.ren;
+      const got = await fetch(`/api/library?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (!got.ok) throw new Error(`HTTP ${got.status}`);
+      const nl = await got.json();
+      nl.settings.libraryName = name;
+      const res = await fetch("/api/library", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, name, newsletter: nl }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (id === libId) { state.settings.libraryName = name; save(); }
+      renderLibrary(); window.refreshTemplatePicker?.();
+    } catch (err) { console.error(err); toast("Couldn't rename"); }
   } else if (del) {
     if (await deleteFromLibrary(del.dataset.del, del.dataset.name)) renderLibrary();
   }
