@@ -986,16 +986,31 @@ $("#viewport").addEventListener("click", (e) => {
 // topbar actions — template picker
 (function initTemplatePicker() {
   const sel = $("#templatePicker");
-  sel.innerHTML = `<option value="" disabled selected>Load template…</option>` +
-    Object.entries(TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join("");
+  const builtins = Object.entries(TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join("");
+  // Saved (shared library) entries are appended as a second group; refreshed after save/delete.
+  window.refreshTemplatePicker = async function () {
+    let saved = "";
+    try {
+      const res = await fetch("/api/library", { cache: "no-store" });
+      if (res.ok) {
+        const items = await res.json();
+        if (items.length) saved = `<optgroup label="Saved">` + items.map((it) => `<option value="lib:${esc(it.id)}">${esc(it.name)}</option>`).join("") + `</optgroup>`;
+      }
+    } catch {}
+    sel.innerHTML = `<option value="" disabled selected>Load template…</option>` + builtins + saved;
+  };
+  window.refreshTemplatePicker();
   sel.addEventListener("change", () => {
-    const tpl = TEMPLATES[sel.value];
+    const v = sel.value;
+    sel.value = "";
+    if (v.startsWith("lib:")) return openFromLibrary(v.slice(4));
+    const tpl = TEMPLATES[v];
     if (!tpl) return;
     state = tpl.build();
+    setLibId(null); // a built-in template is a new document — don't let Save overwrite the saved one
     selectedId = state.blocks[0]?.id || null;
     renderSettings(); renderAll();
     toast(`${tpl.label} loaded`);
-    sel.value = "";
   });
 })();
 $("#btnReset").addEventListener("click", () => {
@@ -1225,7 +1240,8 @@ async function saveToLibrary(asNew) {
     const saved = await res.json();
     setLibId(saved.id);
     save();
-    toast(`Saved “${saved.name}” — anyone can open it from Open`);
+    toast(`Saved “${saved.name}” — now in the template list for everyone`);
+    window.refreshTemplatePicker?.();
   } catch (e) {
     console.error(e);
     toast("Couldn't save — check your connection and try again");
@@ -1257,31 +1273,34 @@ async function renderLibrary() {
     box.innerHTML = '<p style="color:var(--muted-foreground);font-size:13px">Couldn\'t load the list — check your connection.</p>';
   }
 }
+async function openFromLibrary(id) {
+  try {
+    const res = await fetch(`/api/library?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const obj = await res.json();
+    if (!obj || !Array.isArray(obj.blocks) || !obj.settings) throw new Error("malformed");
+    state = obj;
+    selectedId = state.blocks[0]?.id || null;
+    setLibId(id);
+    save(); renderSettings(); renderAll();
+    toast(`Opened “${state.settings.libraryName || "newsletter"}”`);
+    return true;
+  } catch (err) { console.error(err); toast("Couldn't open that newsletter"); return false; }
+}
 $("#btnOpen").addEventListener("click", () => { $("#libraryDialog").classList.add("open"); renderLibrary(); });
 $("#btnCloseLibrary").addEventListener("click", () => $("#libraryDialog").classList.remove("open"));
 $("#libraryList").addEventListener("click", async (e) => {
   const open = e.target.closest("[data-open]");
   const del = e.target.closest("[data-del]");
   if (open) {
-    try {
-      const res = await fetch(`/api/library?id=${encodeURIComponent(open.dataset.open)}`, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const obj = await res.json();
-      if (!obj || !Array.isArray(obj.blocks) || !obj.settings) throw new Error("malformed");
-      state = obj;
-      selectedId = state.blocks[0]?.id || null;
-      setLibId(open.dataset.open);
-      save(); renderSettings(); renderAll();
-      $("#libraryDialog").classList.remove("open");
-      toast(`Opened “${state.settings.libraryName || "newsletter"}”`);
-    } catch (err) { console.error(err); toast("Couldn't open that newsletter"); }
+    if (await openFromLibrary(open.dataset.open)) $("#libraryDialog").classList.remove("open");
   } else if (del) {
     if (!confirm(`Delete “${del.dataset.name}” for everyone?`)) return;
     try {
       const res = await fetch(`/api/library?id=${encodeURIComponent(del.dataset.del)}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if (del.dataset.del === libId) setLibId(null);
-      renderLibrary();
+      renderLibrary(); window.refreshTemplatePicker?.();
     } catch (err) { console.error(err); toast("Couldn't delete"); }
   }
 });
