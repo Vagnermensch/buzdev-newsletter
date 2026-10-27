@@ -1000,7 +1000,8 @@ $("#viewport").addEventListener("click", (e) => {
           <button class="dd-act" data-del="${esc(it.id)}" data-name="${esc(it.name)}" title="Delete">✕</button>
         </div>`).join("")
       : `<div class="dd-hint">Nothing saved yet — use Save.</div>`;
-    menu.innerHTML = `<div class="dd-label">Templates</div>${built}<div class="dd-label">Saved</div>${mine}`;
+    const upload = `<div class="dd-row"><button class="dd-item" data-upload>⬆ Upload template…</button></div>`;
+    menu.innerHTML = `<div class="dd-label">Templates</div>${built}<div class="dd-label">Saved</div>${mine}<div class="dd-label">File</div>${upload}`;
   }
   window.refreshTemplatePicker = async function () {
     try {
@@ -1021,6 +1022,7 @@ $("#viewport").addEventListener("click", (e) => {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
 
   menu.addEventListener("click", async (e) => {
+    if (e.target.closest("[data-upload]")) { setOpen(false); return $("#uploadFile").click(); }
     const tplBtn = e.target.closest("[data-tpl]");
     const libBtn = e.target.closest("[data-lib]");
     const ren = e.target.closest("[data-ren]");
@@ -1060,7 +1062,6 @@ $("#viewport").addEventListener("click", (e) => {
   });
 })();
 // Upload template — load a newsletter from a .json file as a new (unsaved) document.
-$("#btnUpload").addEventListener("click", () => $("#uploadFile").click());
 $("#uploadFile").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   e.target.value = ""; // allow re-selecting the same file
